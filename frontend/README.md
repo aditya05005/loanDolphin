@@ -1,3 +1,0 @@
-# loanDolphin
-
-Loan management software

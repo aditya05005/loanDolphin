@@ -2,19 +2,21 @@
 // Top navigation bar. Now also hosts the light/dark mode toggle button.
 // `theme` and `onToggleTheme` are passed down from App.jsx, which is the
 // component that actually owns the theme state.
-
+import logo from '../assets/loanDolphin-Shield.png'; // Step back out of components/ into assets/
 export default function Navbar({ theme, onToggleTheme }) {
   const isDark = theme === "dark";
 
   return (
-    <nav className="flex items-center justify-between bg-white dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 px-6 py-4">
-      {/* Left side: brand name */}
-      <div className="flex items-center gap-2">
-        <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-bold text-sm">
-          B
-        </div>
-        <span className="text-slate-900 dark:text-white font-semibold text-lg">BankLoan System</span>
-      </div>
+<nav className="flex items-center justify-between bg-white dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 px-6 py-4">
+  {/* Left side: brand name */}
+  <div className="flex items-center gap-2">
+    <img 
+      src={logo}
+      alt="BankLoan System Logo" 
+      className="w-8 h-8 object-contain" 
+    />
+    <span className="text-slate-900 dark:text-white font-semibold text-lg">LoanDolphin</span>
+  </div>
 
       {/* Right side: nav links, theme toggle, logged-in user */}
       <div className="flex items-center gap-6">
@@ -52,9 +54,9 @@ export default function Navbar({ theme, onToggleTheme }) {
 
         <div className="flex items-center gap-2 border-l border-slate-200 dark:border-slate-700 pl-6">
           <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-white text-xs font-semibold">
-            AS
+            AY
           </div>
-          <span className="text-sm text-slate-700 dark:text-slate-200">Alice Smith</span>
+          <span className="text-sm text-slate-700 dark:text-slate-200">Aditya Yadav</span>
         </div>
       </div>
     </nav>
