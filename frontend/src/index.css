@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Let height fill the screen; background color is now handled by Tailwind's
+   `bg-...` / `dark:bg-...` classes on the root App div instead of being
+   hardcoded here, so it can change with the theme toggle. */
+html, body, #root {
+  height: 100%;
+}
+
+/* A gentle transition so switching themes fades instead of snapping. */
+body, * {
+  transition-property: background-color, border-color, color;
+  transition-duration: 200ms;
+}

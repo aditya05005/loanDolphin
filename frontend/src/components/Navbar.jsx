@@ -1,0 +1,62 @@
+// Navbar.jsx
+// Top navigation bar. Now also hosts the light/dark mode toggle button.
+// `theme` and `onToggleTheme` are passed down from App.jsx, which is the
+// component that actually owns the theme state.
+
+export default function Navbar({ theme, onToggleTheme }) {
+  const isDark = theme === "dark";
+
+  return (
+    <nav className="flex items-center justify-between bg-white dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 px-6 py-4">
+      {/* Left side: brand name */}
+      <div className="flex items-center gap-2">
+        <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-bold text-sm">
+          B
+        </div>
+        <span className="text-slate-900 dark:text-white font-semibold text-lg">BankLoan System</span>
+      </div>
+
+      {/* Right side: nav links, theme toggle, logged-in user */}
+      <div className="flex items-center gap-6">
+        <a href="#" className="text-sm text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition">
+          Dashboard
+        </a>
+        <a href="#" className="text-sm text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition">
+          Loans
+        </a>
+        <a href="#" className="text-sm text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition">
+          Branches
+        </a>
+
+        {/* Theme toggle button */}
+        <button
+          type="button"
+          onClick={onToggleTheme}
+          aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+          title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+          className="w-9 h-9 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+        >
+          {isDark ? (
+            // Sun icon — shown in dark mode, click to go light
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+            </svg>
+          ) : (
+            // Moon icon — shown in light mode, click to go dark
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" />
+            </svg>
+          )}
+        </button>
+
+        <div className="flex items-center gap-2 border-l border-slate-200 dark:border-slate-700 pl-6">
+          <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-white text-xs font-semibold">
+            AS
+          </div>
+          <span className="text-sm text-slate-700 dark:text-slate-200">Alice Smith</span>
+        </div>
+      </div>
+    </nav>
+  );
+}
