@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
@@ -22,7 +23,7 @@ app.use(cors({
 // Handle preflight requests explicitly.
 app.options('*', cors());
 
-mongoose.connect('mongodb://127.0.0.1:27017/loanDolphin')
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/loanDolphin')
   .then(() => console.log('MongoDB Connected'))
   .catch(err => console.error(err));
 
