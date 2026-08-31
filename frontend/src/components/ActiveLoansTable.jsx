@@ -25,7 +25,7 @@ export default function ActiveLoansTable({ loans, customers }) {
     <div className="bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60 rounded-xl p-4">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Active Loans</h2>
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">All Loans</h2>
           <p className="text-xs text-slate-500 dark:text-slate-400">
             Loans currently on record across all branches
           </p>

@@ -1,25 +1,58 @@
 // LoanForm.jsx
-// A working, validated loan application form — now styled for both
-// light and dark mode too.
-
 import { useState } from "react";
 
-export default function LoanForm({ branches, customers, loans, onAddLoan }) {
+export default function LoanForm({ branches, customers, loans, onAddLoan, onAddCustomer }) {
   const [formData, setFormData] = useState({
     c_id: "",
-    b_name: "",
+    b_name: branches[0]?.b_name || "",
     amt: "",
     loan_date: new Date().toISOString().slice(0, 10),
   });
 
+  const [customerForm, setCustomerForm] = useState({
+    c_name: "",
+    c_street: "",
+    c_city: ""
+  });
+
   const [feedback, setFeedback] = useState(null);
 
-  const nextLoanNumber = `L-${14 + loans.length}`;
+  const nextLoanNumber = `L-${loans.length + 1}`;
 
   function handleChange(e) {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
     setFeedback(null);
+  }
+
+  function handleCustomerFormChange(e) {
+    const { name, value } = e.target;
+    setCustomerForm((prev) => ({ ...prev, [name]: value }));
+    setFeedback(null);
+  }
+
+  function handleCustomerSubmit(e) {
+    e.preventDefault();
+    const name = customerForm.c_name.trim();
+    const street = customerForm.c_street.trim();
+    const city = customerForm.c_city.trim();
+
+    if (!name || !street || !city) {
+      setFeedback({ type: "error", text: "Customer name, street, and city are required." });
+      return;
+    }
+
+    const newCustomer = {
+      c_id: Date.now(),
+      c_name: name,
+      c_street: street,
+      c_city: city
+    };
+
+    onAddCustomer(newCustomer);
+    setCustomerForm({ c_name: "", c_street: "", c_city: "" });
+    setFormData((prev) => ({ ...prev, c_id: String(newCustomer.c_id) }));
+    setFeedback({ type: "success", text: `${name} was added successfully.` });
   }
 
   function handleSubmit(e) {
@@ -48,17 +81,16 @@ export default function LoanForm({ branches, customers, loans, onAddLoan }) {
       status: "Pending",
     });
 
-    setFeedback({ type: "success", text: `Loan ${nextLoanNumber} submitted and added to Active Loans.` });
+    setFeedback({ type: "success", text: `Loan ${nextLoanNumber} submitted and added to All Loans.` });
 
     setFormData({
       c_id: "",
-      b_name: "",
+      b_name: branches[0]?.b_name || "",
       amt: "",
       loan_date: new Date().toISOString().slice(0, 10),
     });
   }
 
-  // Shared input styling so it doesn't need to be repeated on every field.
   const inputClasses =
     "w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100";
   const labelClasses = "block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1";
@@ -67,8 +99,7 @@ export default function LoanForm({ branches, customers, loans, onAddLoan }) {
     <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 rounded-2xl p-6">
       <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-1">Apply for a New Loan</h2>
       <p className="text-xs text-slate-500 dark:text-slate-400 mb-5">
-        Creates a row matching the <code className="text-slate-400 dark:text-slate-500">loan</code> +{" "}
-        <code className="text-slate-400 dark:text-slate-500">borrower</code> tables
+        Select a real customer and branch from the current records.
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -83,19 +114,54 @@ export default function LoanForm({ branches, customers, loans, onAddLoan }) {
         </div>
 
         <div>
-          <label className={labelClasses}>Customer (c_id)</label>
-          <select name="c_id" value={formData.c_id} onChange={handleChange} className={inputClasses}>
-            <option value="">Select a customer…</option>
-            {customers.map((c) => (
-              <option key={c.c_id} value={c.c_id}>
-                {c.c_name} (c_id: {c.c_id})
-              </option>
-            ))}
-          </select>
+          <label className={labelClasses}>Customer</label>
+          {customers.length === 0 ? (
+            <div className="space-y-3 rounded-xl border border-dashed border-slate-300 bg-white p-3 dark:border-slate-600 dark:bg-slate-900">
+              <p className="text-xs text-slate-500 dark:text-slate-400">No customers available yet.</p>
+              <div className="grid gap-2">
+                <input
+                  type="text"
+                  name="c_name"
+                  value={customerForm.c_name}
+                  onChange={handleCustomerFormChange}
+                  placeholder="Customer name"
+                  className={inputClasses}
+                />
+                <input
+                  type="text"
+                  name="c_street"
+                  value={customerForm.c_street}
+                  onChange={handleCustomerFormChange}
+                  placeholder="Street"
+                  className={inputClasses}
+                />
+                <input
+                  type="text"
+                  name="c_city"
+                  value={customerForm.c_city}
+                  onChange={handleCustomerFormChange}
+                  placeholder="City"
+                  className={inputClasses}
+                />
+                <button type="button" onClick={handleCustomerSubmit} className="rounded-lg bg-slate-800 px-3 py-2 text-xs font-medium text-white dark:bg-slate-700">
+                  Add Customer
+                </button>
+              </div>
+            </div>
+          ) : (
+            <select name="c_id" value={formData.c_id} onChange={handleChange} className={inputClasses}>
+              <option value="">Select a customer…</option>
+              {customers.map((c) => (
+                <option key={c.c_id} value={c.c_id}>
+                  {c.c_name}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         <div>
-          <label className={labelClasses}>Branch (b_name)</label>
+          <label className={labelClasses}>Branch</label>
           <select name="b_name" value={formData.b_name} onChange={handleChange} className={inputClasses}>
             <option value="">Select a branch…</option>
             {branches.map((b) => (
@@ -107,7 +173,7 @@ export default function LoanForm({ branches, customers, loans, onAddLoan }) {
         </div>
 
         <div>
-          <label className={labelClasses}>Loan Amount ($) (amt)</label>
+          <label className={labelClasses}>Loan Amount ($)</label>
           <input
             type="number"
             name="amt"
@@ -121,7 +187,7 @@ export default function LoanForm({ branches, customers, loans, onAddLoan }) {
         </div>
 
         <div>
-          <label className={labelClasses}>Loan Date (loan_date)</label>
+          <label className={labelClasses}>Loan Date</label>
           <input
             type="date"
             name="loan_date"
