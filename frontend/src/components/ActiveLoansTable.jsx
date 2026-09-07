@@ -55,7 +55,7 @@ export default function ActiveLoansTable({ loans, customers }) {
                 <th className="py-2 pr-4">b_name</th>
                 <th className="py-2 pr-4">Customer</th>
                 <th className="py-2 pr-4">amt</th>
-                <th className="py-2 pr-4">loan_date</th>
+                <th className="py-2 pr-4">LOAN_DATE</th>
                 <th className="py-2 pr-4">status</th>
               </tr>
             </thead>
@@ -66,7 +66,9 @@ export default function ActiveLoansTable({ loans, customers }) {
                   <td className="py-3 pr-4 text-slate-600 dark:text-slate-300">{loan.b_name}</td>
                   <td className="py-3 pr-4 text-slate-600 dark:text-slate-300">{customerName(loan.c_id)}</td>
                   <td className="py-3 pr-4 text-slate-900 dark:text-slate-100">${loan.amt.toLocaleString()}</td>
-                  <td className="py-3 pr-4 text-slate-500 dark:text-slate-400">{loan.loan_date}</td>
+                  <td className="py-3 pr-4 text-slate-500 dark:text-slate-400 font-mono text-xs">
+                    {loan.loan_date ? (typeof loan.loan_date === "string" && loan.loan_date.includes("T") ? loan.loan_date.split("T")[0] : String(loan.loan_date)) : "—"}
+                  </td>
                   <td className="py-3 pr-4">
                     <span className={`text-[10px] px-2 py-1 rounded-full font-medium ${statusColor(loan.status)}`}>
                       {loan.status}

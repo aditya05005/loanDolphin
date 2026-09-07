@@ -17,14 +17,46 @@ app.use(cors({
   origin: true,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-user-id']
 }));
 
 // Handle preflight requests explicitly.
 app.options('*', cors());
 
+const seedDefaultUsers = async () => {
+  try {
+    const adminExists = await User.findOne({ userid: 'admin' });
+    if (!adminExists) {
+      await User.create({
+        userid: 'admin',
+        password: 'admin123',
+        type: 'administrator'
+      });
+      console.log('Default admin user seeded: admin / admin123');
+    }
+  } catch (err) {
+    console.error('Error seeding default users:', err);
+  }
+};
+
+const updateExistingLoans = async () => {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    await Loan.updateMany(
+      { $or: [{ loan_date: { $exists: false } }, { loan_date: null }, { loan_date: '' }] },
+      { $set: { loan_date: today } }
+    );
+  } catch (err) {
+    console.error('Error updating existing loans with loan_date:', err);
+  }
+};
+
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/loanDolphin')
-  .then(() => console.log('MongoDB Connected'))
+  .then(async () => {
+    console.log('MongoDB Connected');
+    await seedDefaultUsers();
+    await updateExistingLoans();
+  })
   .catch(err => console.error(err));
 
 // Health check endpoint to verify backend is running.
@@ -77,60 +109,97 @@ app.post('/api/users/register', async (req, res) => {
 
 // Fetch all branches from the database, sorted by name.
 app.get('/api/branches', async (req, res) => {
-  const branches = await Branch.find().sort({ b_name: 1 });
-  res.json(branches);
+  try {
+    const branches = await Branch.find().sort({ b_name: 1 });
+    res.json(branches);
+  } catch (error) {
+    console.error('Error fetching branches:', error);
+    res.status(500).json({ message: 'Failed to fetch branches.' });
+  }
+});
+
+// Fetch all managers from the database.
+app.get('/api/managers', async (req, res) => {
+  try {
+    const managers = await Manager.find().sort({ b_name: 1 });
+    res.json(managers);
+  } catch (error) {
+    console.error('Error fetching managers:', error);
+    res.status(500).json({ message: 'Failed to fetch managers.' });
+  }
 });
 
 // Create a new branch with associated manager user credentials after verifying admin permission.
 app.post('/api/branches', async (req, res) => {
   const { b_name, b_city, assets, managerUserid, managerPassword } = req.body || {};
 
-  if (!b_name || !b_city || !managerUserid || !managerPassword) {
+  const cleanName = b_name?.trim();
+  const cleanCity = b_city?.trim();
+  const cleanUserId = managerUserid?.trim();
+  const cleanPassword = managerPassword?.trim();
+
+  if (!cleanName || !cleanCity || !cleanUserId || !cleanPassword) {
     return res.status(400).json({ message: 'Branch details and manager credentials are required.' });
   }
 
-  const adminUser = await User.findOne({ userid: req.body.currentUserId, type: 'administrator' });
+  const currentUserId = req.body.currentUserId || req.headers['x-user-id'];
+  const adminUser = await User.findOne({ userid: currentUserId, type: 'administrator' });
   if (!adminUser) {
-    return res.status(403).json({ message: 'Only administrators can create branches.' });
+    return res.status(403).json({ message: 'Access denied: Only administrators can create branches and manager accounts.' });
   }
 
-  const existingBranch = await Branch.findOne({ b_name });
+  const existingBranch = await Branch.findOne({ b_name: cleanName });
   if (existingBranch) {
     return res.status(409).json({ message: 'Branch with this name already exists.' });
   }
 
-  const existingUser = await User.findOne({ userid: managerUserid });
+  const existingUser = await User.findOne({ userid: cleanUserId });
   if (existingUser) {
     return res.status(409).json({ message: 'Manager user ID already exists.' });
   }
 
-  const newBranch = await Branch.create({
-    b_name,
-    b_city,
-    assets: Number(assets) || 0
-  });
+  try {
+    const newBranch = await Branch.create({
+      b_name: cleanName,
+      b_city: cleanCity,
+      assets: Number(assets) || 0
+    });
 
-  const newUser = await User.create({
-    userid: managerUserid,
-    password: managerPassword,
-    type: 'branch_manager'
-  });
+    const newUser = await User.create({
+      userid: cleanUserId,
+      password: cleanPassword,
+      type: 'branch_manager'
+    });
 
-  await Manager.create({
-    userid: newUser.userid,
-    b_name: newBranch.b_name
-  });
+    const newManager = await Manager.create({
+      userid: newUser.userid,
+      b_name: newBranch.b_name
+    });
 
-  res.status(201).json({
-    message: 'Branch and manager created successfully',
-    branch: newBranch
-  });
+    return res.status(201).json({
+      message: 'Branch and manager created successfully',
+      branch: newBranch,
+      manager: newManager,
+      user: {
+        userid: newUser.userid,
+        type: newUser.type
+      }
+    });
+  } catch (error) {
+    console.error('Error creating branch and manager:', error);
+    return res.status(500).json({ message: error.message || 'Failed to create branch and manager.' });
+  }
 });
 
 // Fetch all customers from the database, sorted by name.
 app.get('/api/customers', async (req, res) => {
-  const customers = await Customer.find().sort({ c_name: 1 });
-  res.json(customers);
+  try {
+    const customers = await Customer.find().sort({ c_name: 1 });
+    res.json(customers);
+  } catch (error) {
+    console.error('Error fetching customers:', error);
+    res.status(500).json({ message: 'Failed to fetch customers.' });
+  }
 });
 
 // Create a new customer record with name, street, and city information.
@@ -141,32 +210,48 @@ app.post('/api/customers', async (req, res) => {
     return res.status(400).json({ message: 'Customer name, street, and city are required.' });
   }
 
-  const customer = await Customer.create({ c_name, c_street, c_city });
-  res.status(201).json(customer);
+  try {
+    const customer = await Customer.create({ c_name, c_street, c_city });
+    res.status(201).json(customer);
+  } catch (error) {
+    console.error('Error creating customer:', error);
+    res.status(500).json({ message: error.message || 'Failed to create customer.' });
+  }
 });
 
 // Fetch all loans from the database, sorted by loan number.
 app.get('/api/loans', async (req, res) => {
-  const loans = await Loan.find().sort({ l_no: 1 });
-  res.json(loans);
+  try {
+    const loans = await Loan.find().sort({ l_no: 1 });
+    res.json(loans);
+  } catch (error) {
+    console.error('Error fetching loans:', error);
+    res.status(500).json({ message: 'Failed to fetch loans.' });
+  }
 });
 
 // Create a new loan record linked to a branch and borrowers.
 app.post('/api/loans', async (req, res) => {
-  const { l_no, amt, b_name, borrowers } = req.body || {};
+  const { l_no, amt, b_name, borrowers, loan_date, c_id } = req.body || {};
 
   if (!l_no || !amt || !b_name) {
     return res.status(400).json({ message: 'Loan number, amount, and branch are required.' });
   }
 
-  const loan = await Loan.create({
-    l_no,
-    amt: Number(amt),
-    b_name,
-    borrowers: borrowers || []
-  });
+  try {
+    const loan = await Loan.create({
+      l_no,
+      amt: Number(amt),
+      b_name,
+      borrowers: borrowers || (c_id ? [String(c_id)] : []),
+      loan_date: loan_date || new Date().toISOString().slice(0, 10)
+    });
 
-  res.status(201).json(loan);
+    res.status(201).json(loan);
+  } catch (error) {
+    console.error('Error creating loan:', error);
+    res.status(500).json({ message: error.message || 'Failed to create loan.' });
+  }
 });
 
 app.listen(5000, () => console.log('Backend running on port 5000'));

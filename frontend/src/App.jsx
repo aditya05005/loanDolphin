@@ -216,10 +216,12 @@ export default function App() {
         })
       });
 
-      setBranches((prev) => [...prev, response.branch]);
-      const newManagerRecord = {
+      if (response.branch) {
+        setBranches((prev) => [...prev, response.branch]);
+      }
+      const newManagerRecord = response.manager || {
         userid: branchForm.managerUserid.trim(),
-        b_name: response.branch.b_name
+        b_name: branchForm.b_name.trim()
       };
       setManagers((prev) => [...prev, newManagerRecord]);
 
@@ -234,15 +236,19 @@ export default function App() {
 
     async function loadData() {
       try {
-        const [branchData, customerData, loanData] = await Promise.all([
+        const [branchData, customerData, loanData, managerData] = await Promise.all([
           apiRequest('/branches'),
           apiRequest('/customers'),
-          apiRequest('/loans')
+          apiRequest('/loans'),
+          apiRequest('/managers').catch(() => [])
         ]);
 
-        setBranches(branchData);
-        setCustomers(customerData);
-        setLoans(loanData);
+        if (branchData) setBranches(branchData);
+        if (customerData) setCustomers(customerData);
+        if (loanData) setLoans(loanData);
+        if (managerData && Array.isArray(managerData)) {
+          setManagers(managerData);
+        }
       } catch (error) {
         console.error('Failed to load app data:', error);
       }
@@ -312,7 +318,12 @@ export default function App() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
             <ActiveLoansTable loans={loans} customers={customers} />
-            <BranchCards branches={branches} managers={managers} />
+            <BranchCards
+              branches={branches}
+              managers={managers}
+              currentUser={currentUser}
+              onCreateBranch={handleCreateBranch}
+            />
           </div>
           <div>
             <LoanForm
@@ -345,9 +356,9 @@ function BranchSetupForm({ onCreateBranch, onBackToLogin }) {
     setFeedback("");
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
-    const result = onCreateBranch(form);
+    const result = await onCreateBranch(form);
     if (!result.ok) {
       setFeedback(result.message);
       return;
