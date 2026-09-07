@@ -9,6 +9,11 @@ const loanSchema = new mongoose.Schema({
     type: String,
     required: true,
     default: () => new Date().toISOString().slice(0, 10)
+  },
+  status: {
+    type: String,
+    enum: ['Pending', 'Approved', 'Rejected'],
+    default: 'Pending'
   }
 });
 

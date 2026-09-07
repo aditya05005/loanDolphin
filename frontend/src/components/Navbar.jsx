@@ -1,9 +1,13 @@
 // Navbar.jsx
 import logo from '../assets/loanDolphin-Shield.png';
+import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 
-export default function Navbar({ theme, onToggleTheme, user, onLogout }) {
+export default function Navbar() {
+  const { theme, toggleTheme } = useTheme();
+  const { currentUser, logout } = useAuth();
   const isDark = theme === "dark";
-  const initials = user?.userid?.slice(0, 2).toUpperCase() || "LD";
+  const initials = currentUser?.userid?.slice(0, 2).toUpperCase() || "LD";
 
   return (
     <nav className="flex items-center justify-between bg-white dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 px-6 py-4">
@@ -29,7 +33,7 @@ export default function Navbar({ theme, onToggleTheme, user, onLogout }) {
 
         <button
           type="button"
-          onClick={onToggleTheme}
+          onClick={toggleTheme}
           aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
           title={isDark ? "Switch to light mode" : "Switch to dark mode"}
           className="w-9 h-9 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
@@ -51,10 +55,10 @@ export default function Navbar({ theme, onToggleTheme, user, onLogout }) {
             {initials}
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-sm text-slate-700 dark:text-slate-200">{user?.userid}</span>
+            <span className="text-sm text-slate-700 dark:text-slate-200">{currentUser?.userid}</span>
             <button
               type="button"
-              onClick={onLogout}
+              onClick={logout}
               className="text-xs text-slate-500 hover:text-red-500 dark:text-slate-300 dark:hover:text-red-400"
             >
               Logout

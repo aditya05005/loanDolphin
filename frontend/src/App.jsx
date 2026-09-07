@@ -5,32 +5,16 @@ import MetricsOverview from "./components/MetricsOverview";
 import ActiveLoansTable from "./components/ActiveLoansTable";
 import BranchCards from "./components/BranchCards";
 import LoanForm from "./components/LoanForm";
+import LandingPage from "./components/LandingPage";
 import LoginScreen from "./components/LoginScreen";
 import { apiRequest } from "./services/api";
+import { useAuth } from "./context/AuthContext";
+import { useTheme } from "./context/ThemeContext";
 
-const DEFAULT_USERS = [
-  { userid: "admin", password: "admin123", type: "administrator" },
-  { userid: "branch01", password: "branch123", type: "branch_manager" },
-  { userid: "senior01", password: "senior123", type: "senior_manager" },
-];
-
-const USERS_STORAGE_KEY = "loanDolphinUsers";
 const BRANCHES_STORAGE_KEY = "loanDolphinBranches";
 const CUSTOMERS_STORAGE_KEY = "loanDolphinCustomers";
 const LOANS_STORAGE_KEY = "loanDolphinLoans";
 const MANAGERS_STORAGE_KEY = "loanDolphinManagers";
-const SESSION_STORAGE_KEY = "loanDolphinSession";
-
-function getInitialTheme() {
-  try {
-    const saved = localStorage.getItem("theme");
-    if (saved === "light" || saved === "dark") return saved;
-  } catch {
-    // Ignore unavailable localStorage access.
-  }
-  const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
-  return prefersDark ? "dark" : "light";
-}
 
 function getStoredValue(key, fallback) {
   try {
@@ -39,15 +23,6 @@ function getStoredValue(key, fallback) {
   } catch {
     return fallback;
   }
-}
-
-function getUsers() {
-  const storedUsers = getStoredValue(USERS_STORAGE_KEY, []);
-  if (storedUsers.length === 0) {
-    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(DEFAULT_USERS));
-    return DEFAULT_USERS;
-  }
-  return storedUsers;
 }
 
 function getBranches() {
@@ -66,44 +41,19 @@ function getManagers() {
   return getStoredValue(MANAGERS_STORAGE_KEY, []);
 }
 
-function getCurrentSessionUser() {
-  try {
-    const user = JSON.parse(sessionStorage.getItem(SESSION_STORAGE_KEY));
-    return user || null;
-  } catch {
-    return null;
-  }
-}
-
 export default function App() {
+  const { currentUser, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
+
+  const [currentView, setCurrentView] = useState("landing");
   const [branches, setBranches] = useState(getBranches);
   const [customers, setCustomers] = useState(getCustomers);
   const [loans, setLoans] = useState(getLoans);
   const [managers, setManagers] = useState(getManagers);
-  const [theme, setTheme] = useState(getInitialTheme);
-  const [authMode, setAuthMode] = useState("login");
-  const [authError, setAuthError] = useState("");
-  const [currentUser, setCurrentUser] = useState(getCurrentSessionUser);
-  const [loginForm, setLoginForm] = useState({
-    userid: "",
-    password: "",
-    type: "branch_manager"
-  });
 
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", theme === "dark");
-    try {
-      localStorage.setItem("theme", theme);
-    } catch {
-      // Ignore localStorage errors.
-    }
-  }, [theme]);
-
-  useEffect(() => {
-    if (currentUser) {
-      sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(currentUser));
-    } else {
-      sessionStorage.removeItem(SESSION_STORAGE_KEY);
+    if (!currentUser) {
+      setCurrentView("landing");
     }
   }, [currentUser]);
 
@@ -123,69 +73,6 @@ export default function App() {
     localStorage.setItem(MANAGERS_STORAGE_KEY, JSON.stringify(managers));
   }, [managers]);
 
-  function toggleTheme() {
-    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
-  }
-
-  function handleLoginFormChange(event) {
-    const { name, value } = event.target;
-    setLoginForm((prev) => ({ ...prev, [name]: value }));
-    setAuthError("");
-  }
-
-  async function handleAuthSubmit(event) {
-    event.preventDefault();
-
-    if (authMode === "login") {
-      try {
-        const user = await apiRequest('/users/login', {
-          method: 'POST',
-          body: JSON.stringify({
-            userid: loginForm.userid,
-            password: loginForm.password
-          })
-        });
-
-        setCurrentUser({ userid: user.userid, type: user.type });
-        setAuthError("");
-        setLoginForm({ userid: "", password: "", type: "branch_manager" });
-      } catch (error) {
-        setAuthError(error.message || 'Login failed.');
-      }
-      return;
-    }
-
-    const normalizedUserId = loginForm.userid.trim();
-    if (!normalizedUserId) {
-      setAuthError("User ID is required.");
-      return;
-    }
-
-    try {
-      const user = await apiRequest('/users/register', {
-        method: 'POST',
-        body: JSON.stringify({
-          userid: normalizedUserId,
-          password: loginForm.password,
-          type: loginForm.type
-        })
-      });
-
-      setCurrentUser({ userid: user.userid, type: user.type });
-      setAuthError("");
-      setLoginForm({ userid: "", password: "", type: "branch_manager" });
-    } catch (error) {
-      setAuthError(error.message || 'Account creation failed.');
-    }
-  }
-
-  function handleLogout() {
-    setCurrentUser(null);
-    setAuthMode("login");
-    setAuthError("");
-    setLoginForm({ userid: "", password: "", type: "branch_manager" });
-  }
-
   async function addLoan(newLoan) {
     const savedLoan = await apiRequest('/loans', {
       method: 'POST',
@@ -200,6 +87,24 @@ export default function App() {
       body: JSON.stringify(newCustomer)
     });
     setCustomers((prev) => [...prev, savedCustomer]);
+  }
+
+  // Update loan status (approve/reject/reset)
+  async function updateLoanStatus(id, newStatus) {
+    try {
+      const updatedLoan = await apiRequest(`/loans/${id}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({ status: newStatus, currentUserId: currentUser?.userid })
+      });
+      setLoans((prev) =>
+        prev.map((loan) =>
+          loan.l_no === updatedLoan.l_no || loan._id === updatedLoan._id ? updatedLoan : loan
+        )
+      );
+    } catch (err) {
+      console.error('Failed to update loan status', err);
+      throw err;
+    }
   }
 
   async function handleCreateBranch(branchForm) {
@@ -258,16 +163,10 @@ export default function App() {
   }, [currentUser]);
 
   if (!currentUser) {
-    return (
-      <LoginScreen
-        form={loginForm}
-        mode={authMode}
-        error={authError}
-        onFormChange={handleLoginFormChange}
-        onSubmit={handleAuthSubmit}
-        onToggleMode={setAuthMode}
-      />
-    );
+    if (currentView === "landing") {
+      return <LandingPage onGetStarted={() => setCurrentView("login")} />;
+    }
+    return <LoginScreen onBack={() => setCurrentView("landing")} />;
   }
 
   if (branches.length === 0) {
@@ -286,21 +185,16 @@ export default function App() {
               Only an administrator can create a new branch and assign manager credentials.
             </div>
           ) : (
-            <BranchSetupForm onCreateBranch={handleCreateBranch} onBackToLogin={handleLogout} />
+            <BranchSetupForm onCreateBranch={handleCreateBranch} onBackToLogin={logout} />
           )}
         </div>
       </div>
     );
   }
-
+  const managerBranch = managers.find((m) => m.userid === currentUser?.userid)?.b_name || null;
   return (
     <div className="min-h-screen bg-white dark:bg-slate-900">
-      <Navbar
-        theme={theme}
-        onToggleTheme={toggleTheme}
-        user={currentUser}
-        onLogout={handleLogout}
-      />
+      <Navbar />
 
       <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
         <div>
@@ -317,7 +211,10 @@ export default function App() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
-            <ActiveLoansTable loans={loans} customers={customers} />
+
+
+  // ... inside return
+          <ActiveLoansTable loans={loans} customers={customers} currentUser={currentUser} managerBranch={managerBranch} onUpdateLoanStatus={updateLoanStatus} />
             <BranchCards
               branches={branches}
               managers={managers}

@@ -46,8 +46,12 @@ const updateExistingLoans = async () => {
       { $or: [{ loan_date: { $exists: false } }, { loan_date: null }, { loan_date: '' }] },
       { $set: { loan_date: today } }
     );
+    await Loan.updateMany(
+      { $or: [{ status: { $exists: false } }, { status: null }, { status: '' }] },
+      { $set: { status: 'Pending' } }
+    );
   } catch (err) {
-    console.error('Error updating existing loans with loan_date:', err);
+    console.error('Error updating existing loans with loan_date and status:', err);
   }
 };
 
@@ -232,25 +236,78 @@ app.get('/api/loans', async (req, res) => {
 
 // Create a new loan record linked to a branch and borrowers.
 app.post('/api/loans', async (req, res) => {
-  const { l_no, amt, b_name, borrowers, loan_date, c_id } = req.body || {};
+  const { l_no, amt, b_name, borrowers, loan_date, c_id, status } = req.body || {};
 
   if (!l_no || !amt || !b_name) {
     return res.status(400).json({ message: 'Loan number, amount, and branch are required.' });
   }
 
   try {
+    const validStatus = status && ['Pending', 'Approved', 'Rejected'].includes(status) ? status : 'Pending';
     const loan = await Loan.create({
       l_no,
       amt: Number(amt),
       b_name,
       borrowers: borrowers || (c_id ? [String(c_id)] : []),
-      loan_date: loan_date || new Date().toISOString().slice(0, 10)
+      loan_date: loan_date || new Date().toISOString().slice(0, 10),
+      status: validStatus
     });
 
     res.status(201).json(loan);
   } catch (error) {
     console.error('Error creating loan:', error);
     res.status(500).json({ message: error.message || 'Failed to create loan.' });
+  }
+});
+
+// Update a loan's status - now also allowed for branch_manager on own branch
+app.put('/api/loans/:id/status', async (req, res) => {
+  const { status, currentUserId: bodyUserId } = req.body || {};
+  const currentUserId = bodyUserId || req.headers['x-user-id'];
+
+  if (!currentUserId) {
+    return res.status(401).json({ message: 'Authentication required.' });
+  }
+
+  const user = await User.findOne({ userid: currentUserId });
+  if (!user) {
+    return res.status(403).json({ message: 'Access denied: User not found.' });
+  }
+
+  const allowedRoles = ['senior_manager', 'administrator', 'branch_manager'];
+  if (!allowedRoles.includes(user.type)) {
+    return res.status(403).json({ message: 'Access denied: Insufficient permissions.' });
+  }
+
+  if (!status || !['Pending', 'Approved', 'Rejected'].includes(status)) {
+    return res.status(400).json({ message: 'Invalid status. Must be one of: Pending, Approved, Rejected.' });
+  }
+
+  try {
+    const idParam = req.params.id;
+    const query = mongoose.Types.ObjectId.isValid(idParam)
+      ? { $or: [{ _id: idParam }, { l_no: idParam }] }
+      : { l_no: idParam };
+
+    // Fetch the loan first to perform branch check for branch_manager
+    const loan = await Loan.findOne(query);
+    if (!loan) {
+      return res.status(404).json({ message: 'Loan not found.' });
+    }
+
+    // If the user is a branch_manager, ensure they manage the loan's branch
+    if (user.type === 'branch_manager') {
+      const manager = await Manager.findOne({ userid: user.userid });
+      if (!manager || manager.b_name !== loan.b_name) {
+        return res.status(403).json({ message: 'Access denied: Branch manager can only modify loans of their own branch.' });
+      }
+    }
+
+    const updatedLoan = await Loan.findOneAndUpdate(query, { status }, { new: true });
+    res.json(updatedLoan);
+  } catch (error) {
+    console.error('Error updating loan status:', error);
+    res.status(500).json({ message: error.message || 'Failed to update loan status.' });
   }
 });
 
