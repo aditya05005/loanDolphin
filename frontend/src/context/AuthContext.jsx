@@ -44,13 +44,14 @@ export function AuthProvider({ children }) {
     return sessionUser;
   }
 
-  async function register(userid, password, type) {
+  async function register(userid, password, type, extra = {}) {
     const user = await apiRequest('/users/register', {
       method: 'POST',
       body: JSON.stringify({
         userid,
         password,
-        type
+        type,
+        ...extra
       })
     });
 

@@ -10,6 +10,8 @@ export default function LoanForm({ branches, customers, loans, onAddLoan, onAddC
   });
 
   const [customerForm, setCustomerForm] = useState({
+    userid: "",
+    password: "",
     c_name: "",
     c_street: "",
     c_city: ""
@@ -17,7 +19,9 @@ export default function LoanForm({ branches, customers, loans, onAddLoan, onAddC
 
   const [feedback, setFeedback] = useState(null);
 
-  const nextLoanNumber = `L-${loans.length + 1}`;
+// Loan number is now generated server‑side, so we show a placeholder
+const nextLoanNumber = "(will be assigned)";
+
 
   function handleChange(e) {
     const { name, value } = e.target;
@@ -31,28 +35,30 @@ export default function LoanForm({ branches, customers, loans, onAddLoan, onAddC
     setFeedback(null);
   }
 
-  function handleCustomerSubmit(e) {
+  async function handleCustomerSubmit(e) {
     e.preventDefault();
+    const userid = customerForm.userid.trim();
+    const password = customerForm.password.trim();
     const name = customerForm.c_name.trim();
     const street = customerForm.c_street.trim();
     const city = customerForm.c_city.trim();
 
-    if (!name || !street || !city) {
-      setFeedback({ type: "error", text: "Customer name, street, and city are required." });
+    if (!userid || !password || !name || !street || !city) {
+      setFeedback({ type: "error", text: "Login ID, password, name, street, and city are all required." });
       return;
     }
 
-    const newCustomer = {
-      c_id: Date.now(),
-      c_name: name,
-      c_street: street,
-      c_city: city
-    };
-
-    onAddCustomer(newCustomer);
-    setCustomerForm({ c_name: "", c_street: "", c_city: "" });
-    setFormData((prev) => ({ ...prev, c_id: String(newCustomer.c_id) }));
-    setFeedback({ type: "success", text: `${name} was added successfully.` });
+    try {
+      // Every customer needs a real login now, so this creates the User
+      // account and the linked Customer record together — c_id comes back
+      // from the server rather than being made up on the client.
+      const savedCustomer = await onAddCustomer({ userid, password, c_name: name, c_street: street, c_city: city });
+      setCustomerForm({ userid: "", password: "", c_name: "", c_street: "", c_city: "" });
+      setFormData((prev) => ({ ...prev, c_id: String(savedCustomer.c_id) }));
+      setFeedback({ type: "success", text: `${name} was added successfully.` });
+    } catch (err) {
+      setFeedback({ type: "error", text: err.message || "Failed to add customer." });
+    }
   }
 
   function handleSubmit(e) {
@@ -119,6 +125,22 @@ export default function LoanForm({ branches, customers, loans, onAddLoan, onAddC
             <div className="space-y-3 rounded-xl border border-dashed border-slate-300 bg-white p-3 dark:border-slate-600 dark:bg-slate-900">
               <p className="text-xs text-slate-500 dark:text-slate-400">No customers available yet.</p>
               <div className="grid gap-2">
+                <input
+                  type="text"
+                  name="userid"
+                  value={customerForm.userid}
+                  onChange={handleCustomerFormChange}
+                  placeholder="Login ID"
+                  className={inputClasses}
+                />
+                <input
+                  type="password"
+                  name="password"
+                  value={customerForm.password}
+                  onChange={handleCustomerFormChange}
+                  placeholder="Temporary password"
+                  className={inputClasses}
+                />
                 <input
                   type="text"
                   name="c_name"

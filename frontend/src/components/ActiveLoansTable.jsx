@@ -38,7 +38,15 @@ export default function ActiveLoansTable({
   }
 
   function customerName(c_id) {
-    return customers.find((c) => c.c_id === c_id)?.c_name ?? "Unknown";
+  // 1. Immediately return fallback if no c_id was passed for the loan
+  if (!c_id) return "Unknown";
+
+  // 2. Safely match only when the customer record actually possesses a valid c_id (or _id)
+  const customer = customers.find(
+    (c) => (c.c_id && c.c_id === c_id) || (c._id && String(c._id) === String(c_id))
+  );
+
+  return customer?.c_name ?? "Unknown";
   }
 
   const visibleLoans =

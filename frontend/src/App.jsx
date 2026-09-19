@@ -1,4 +1,3 @@
-// App.jsx
 import { useState, useEffect } from "react";
 import Navbar from "./components/Navbar";
 import MetricsOverview from "./components/MetricsOverview";
@@ -10,6 +9,8 @@ import LoginScreen from "./components/LoginScreen";
 import { apiRequest } from "./services/api";
 import { useAuth } from "./context/AuthContext";
 import { useTheme } from "./context/ThemeContext";
+import CustomerDashboard from "./components/CustomerDashboard";
+import LoanApplicationForm from "./components/LoanApplicationForm";
 
 const BRANCHES_STORAGE_KEY = "loanDolphinBranches";
 const CUSTOMERS_STORAGE_KEY = "loanDolphinCustomers";
@@ -45,11 +46,25 @@ export default function App() {
   const { currentUser, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
 
-  const [currentView, setCurrentView] = useState("landing");
+  // State declarations
   const [branches, setBranches] = useState(getBranches);
   const [customers, setCustomers] = useState(getCustomers);
   const [loans, setLoans] = useState(getLoans);
   const [managers, setManagers] = useState(getManagers);
+  const [currentView, setCurrentView] = useState("landing");
+  const [customerView, setCustomerView] = useState("dashboard"); // "dashboard" or "apply"
+
+  async function addCustomerLoan(newLoan) {
+    // The backend identifies the applicant from the x-user-id header
+    // (attached automatically by apiRequest) rather than a body field, so
+    // there's nothing identity-related to add to the payload here.
+    const savedLoan = await apiRequest('/customer/loans', {
+      method: 'POST',
+      body: JSON.stringify(newLoan)
+    });
+    setLoans((prev) => [...prev, savedLoan]);
+    setCustomerView("dashboard");
+  }
 
   useEffect(() => {
     if (!currentUser) {
@@ -81,12 +96,27 @@ export default function App() {
     setLoans((prev) => [...prev, savedLoan]);
   }
 
+  // Every customer needs a real login now, so "adding a customer" from the
+  // staff-side loan form actually registers a User (type: customer) and its
+  // linked Customer record together. We call /api/users/register directly
+  // rather than AuthContext's register() — that helper also switches the
+  // active session to the newly created account, which would log the staff
+  // member out of their own session.
   async function addCustomer(newCustomer) {
-    const savedCustomer = await apiRequest('/customers', {
+    const { userid, password, c_name, c_street, c_city } = newCustomer;
+    const response = await apiRequest('/users/register', {
       method: 'POST',
-      body: JSON.stringify(newCustomer)
+      body: JSON.stringify({ userid, password, type: 'customer', c_name, c_street, c_city })
     });
+    const savedCustomer = {
+      c_id: response.c_id,
+      userid: response.userid,
+      c_name,
+      c_street,
+      c_city
+    };
     setCustomers((prev) => [...prev, savedCustomer]);
+    return savedCustomer;
   }
 
   // Update loan status (approve/reject/reset)
@@ -94,7 +124,7 @@ export default function App() {
     try {
       const updatedLoan = await apiRequest(`/loans/${id}/status`, {
         method: 'PUT',
-        body: JSON.stringify({ status: newStatus, currentUserId: currentUser?.userid })
+        body: JSON.stringify({ status: newStatus })
       });
       setLoans((prev) =>
         prev.map((loan) =>
@@ -115,10 +145,7 @@ export default function App() {
     try {
       const response = await apiRequest('/branches', {
         method: 'POST',
-        body: JSON.stringify({
-          ...branchForm,
-          currentUserId: currentUser.userid
-        })
+        body: JSON.stringify(branchForm)
       });
 
       if (response.branch) {
@@ -162,6 +189,35 @@ export default function App() {
     loadData();
   }, [currentUser]);
 
+  // Render customer sections
+  if (currentUser?.type === "customer") {
+    if (customerView === "apply") {
+      return (
+        <div className="min-h-screen bg-white dark:bg-slate-900">
+          <Navbar />
+          <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+            <LoanApplicationForm
+              branches={branches}
+              onSubmit={addCustomerLoan}
+              onCancel={() => setCustomerView("dashboard")}
+            />
+          </main>
+        </div>
+      );
+    }
+    return (
+      <div className="min-h-screen bg-white dark:bg-slate-900">
+        <Navbar />
+        <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+          <CustomerDashboard
+            loans={loans.filter(l => l.customerUserId === currentUser.userid)}
+            onApply={() => setCustomerView("apply")}
+          />
+        </main>
+      </div>
+    );
+  }
+
   if (!currentUser) {
     if (currentView === "landing") {
       return <LandingPage onGetStarted={() => setCurrentView("login")} />;
@@ -191,7 +247,9 @@ export default function App() {
       </div>
     );
   }
+
   const managerBranch = managers.find((m) => m.userid === currentUser?.userid)?.b_name || null;
+
   return (
     <div className="min-h-screen bg-white dark:bg-slate-900">
       <Navbar />
@@ -211,10 +269,7 @@ export default function App() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
-
-
-  // ... inside return
-          <ActiveLoansTable loans={loans} customers={customers} currentUser={currentUser} managerBranch={managerBranch} onUpdateLoanStatus={updateLoanStatus} />
+            <ActiveLoansTable loans={loans} customers={customers} currentUser={currentUser} managerBranch={managerBranch} onUpdateLoanStatus={updateLoanStatus} />
             <BranchCards
               branches={branches}
               managers={managers}

@@ -2,6 +2,7 @@
 import { useState } from "react";
 import logo from "../assets/loanDolphin-Shield.png";
 import { useAuth } from "../context/AuthContext";
+import { apiRequest } from "../services/api";
 
 export default function LoginScreen({ onBack }) {
   const { login, register } = useAuth();
@@ -10,7 +11,10 @@ export default function LoginScreen({ onBack }) {
   const [form, setForm] = useState({
     userid: "",
     password: "",
-    type: "branch_manager"
+    c_name: "",
+    c_street: "",
+    c_city: "",
+    type: "customer",
   });
 
   const isRegister = mode === "register";
@@ -42,7 +46,11 @@ export default function LoginScreen({ onBack }) {
       }
     } else {
       try {
-        await register(normalizedUserId, form.password, form.type);
+        await register(normalizedUserId, form.password, form.type, {
+          c_name: form.c_name,
+          c_street: form.c_street,
+          c_city: form.c_city
+        });
       } catch (err) {
         setError(err.message || "Account creation failed.");
       }
@@ -133,23 +141,56 @@ export default function LoginScreen({ onBack }) {
             />
           </div>
 
-          {isRegister && (
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">
-                Account Type
-              </label>
-              <select
-                name="type"
-                value={form.type}
-                onChange={onFormChange}
-                className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none transition focus:border-emerald-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
-              >
-                <option value="branch_manager">Branch Manager</option>
-                <option value="senior_manager">Senior Manager</option>
-                <option value="administrator">Administrator</option>
-              </select>
-            </div>
-          )}
+            {/* Self-registration only ever creates a customer account —
+                the backend rejects any other type, so there's no role
+                picker here; staff accounts are provisioned separately
+                when an administrator creates a branch. */}
+            {isRegister && (
+              <>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">
+                        Name
+                      </label>
+                      <input
+                        type="text"
+                        name="c_name"
+                        value={form.c_name || ""}
+                        onChange={onFormChange}
+                        placeholder="Enter name"
+                        className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none focus:border-emerald-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">
+                        Street
+                      </label>
+                      <input
+                        type="text"
+                        name="c_street"
+                        value={form.c_street || ""}
+                        onChange={onFormChange}
+                        placeholder="Enter street"
+                        className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none focus:border-emerald-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">
+                        City
+                      </label>
+                      <input
+                        type="text"
+                        name="c_city"
+                        value={form.c_city || ""}
+                        onChange={onFormChange}
+                        placeholder="Enter city"
+                        className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none focus:border-emerald-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                        required
+                      />
+                    </div>
+              </>
+            )}
 
           {error && (
             <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
