@@ -5,7 +5,9 @@ const customerSchema = new mongoose.Schema({
   userid:   { type: String, required: true, unique: true, trim: true },
   c_name:   { type: String, required: true, trim: true },
   c_street: { type: String, required: true, trim: true },
-  c_city:   { type: String, required: true, trim: true }
+  c_city:   { type: String, required: true, trim: true },
+  aadharNumber: { type: String, required: true, trim: true },
+  panCard:  { type: String, required: true, trim: true }
 });
 
 export default mongoose.model('Customer', customerSchema);

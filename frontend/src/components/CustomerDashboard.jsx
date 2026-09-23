@@ -9,22 +9,24 @@ import React from "react";
 export default function CustomerDashboard({ loans, onApply }) {
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-semibold text-slate-900 dark:text-white">
-        My Loans
-      </h2>
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-semibold text-slate-900 dark:text-white">
+          My Loans
+        </h2>
+        <button
+          type="button"
+          onClick={onApply}
+          className="inline-flex items-center gap-1.5 rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-500"
+        >
+          Apply for Loan
+        </button>
+      </div>
 
       {loans.length === 0 ? (
         <div className="p-4 bg-amber-50 dark:bg-amber-950/30 rounded">
           <p className="text-slate-700 dark:text-slate-300">
-            Apply for a loan to view current status.
+            No loans found. Click "Apply for Loan" to get started.
           </p>
-          <button
-            type="button"
-            onClick={onApply}
-            className="mt-2 inline-flex items-center gap-1.5 rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-500"
-          >
-            Apply for Loan
-          </button>
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

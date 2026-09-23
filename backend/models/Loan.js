@@ -7,7 +7,6 @@ const loanSchema = new mongoose.Schema({
   borrowers:      [{ type: String }],                          // array of c_id strings
   c_id:           { type: String },
   customerUserId: { type: String },
-  aadharNumber:   { type: String },
   loan_date:      { type: Date, default: Date.now },
   payments:       [{ amount: { type: Number }, date: { type: Date, default: Date.now } }],
   status: {
