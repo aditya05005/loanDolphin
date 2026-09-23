@@ -3,6 +3,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
 import crypto from 'crypto';
+import rateLimit from 'express-rate-limit';
 
 import Branch from './models/Branch.js';
 import Customer from './models/Customer.js';
@@ -26,6 +27,37 @@ app.use(cors({
 
 const ROLES = ['branch_manager', 'senior_manager', 'administrator', 'customer'];
 const LOAN_STATUSES = ['Pending', 'Approved', 'Rejected'];
+
+// ---------- rate limiting ----------
+
+// Baseline limiter for all API traffic.
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many requests. Please try again later.' }
+});
+app.use('/api', generalLimiter);
+
+// Tighter limiter for endpoints worth throttling harder than general
+// traffic: credential guessing and application spam.
+const strictLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many attempts. Please try again later.' }
+});
+
+// ---------- async wrapper ----------
+
+// Express 4 does not catch rejected promises from async route handlers —
+// an error thrown after this point would otherwise hang the request or
+// crash the process instead of reaching the error-handling middleware.
+const asyncHandler = (fn) => (req, res, next) => {
+  Promise.resolve(fn(req, res, next)).catch(next);
+};
 
 // ---------- strict helpers (no loose coercion, no silent fallbacks) ----------
 
@@ -80,7 +112,7 @@ app.get('/api/health', (req, res) => {
 
 // ============================== AUTH ==============================
 
-app.post('/api/users/login', async (req, res) => {
+app.post('/api/users/login', strictLimiter, asyncHandler(async (req, res) => {
   const { userid, password } = req.body || {};
   if (!isNonEmptyString(userid) || !isNonEmptyString(password)) {
     return res.status(400).json({ message: 'User ID and password are required.' });
@@ -92,9 +124,9 @@ app.post('/api/users/login', async (req, res) => {
   }
 
   return res.json({ userid: user.userid, type: user.type, message: 'Login successful' });
-});
+}));
 
-app.post('/api/users/register', async (req, res) => {
+app.post('/api/users/register', strictLimiter, asyncHandler(async (req, res) => {
   const { userid, password, type, c_name, c_street, c_city } = req.body || {};
 
   if (!isNonEmptyString(userid) || !isNonEmptyString(password)) {
@@ -145,11 +177,11 @@ app.post('/api/users/register', async (req, res) => {
     console.error('Error registering customer:', error);
     return res.status(500).json({ message: 'Failed to register customer.' });
   }
-});
+}));
 
 // ============================== BRANCHES ==============================
 
-app.get('/api/branches', async (req, res) => {
+app.get('/api/branches', asyncHandler(async (req, res) => {
   try {
     const branches = await Branch.find().sort({ b_name: 1 });
     res.json(branches);
@@ -157,9 +189,9 @@ app.get('/api/branches', async (req, res) => {
     console.error('Error fetching branches:', error);
     res.status(500).json({ message: 'Failed to fetch branches.' });
   }
-});
+}));
 
-app.post('/api/branches', async (req, res) => {
+app.post('/api/branches', asyncHandler(async (req, res) => {
   const { b_name, b_city, assets, managerUserid, managerPassword } = req.body || {};
 
   if (!isNonEmptyString(b_name) || !isNonEmptyString(b_city) ||
@@ -210,11 +242,11 @@ app.post('/api/branches', async (req, res) => {
     console.error('Error creating branch and manager:', error);
     return res.status(500).json({ message: 'Failed to create branch and manager.' });
   }
-});
+}));
 
 // ============================== MANAGERS ==============================
 
-app.get('/api/managers', async (req, res) => {
+app.get('/api/managers', asyncHandler(async (req, res) => {
   try {
     const managers = await Manager.find().sort({ b_name: 1 });
     res.json(managers);
@@ -222,11 +254,11 @@ app.get('/api/managers', async (req, res) => {
     console.error('Error fetching managers:', error);
     res.status(500).json({ message: 'Failed to fetch managers.' });
   }
-});
+}));
 
 // ============================== CUSTOMERS ==============================
 
-app.get('/api/customers', async (req, res) => {
+app.get('/api/customers', asyncHandler(async (req, res) => {
   try {
     const customers = await Customer.find().sort({ c_name: 1 });
     res.json(customers);
@@ -234,12 +266,12 @@ app.get('/api/customers', async (req, res) => {
     console.error('Error fetching customers:', error);
     res.status(500).json({ message: 'Failed to fetch customers.' });
   }
-});
+}));
 
 // Admin-side creation of a Customer record for an EXISTING user of type
 // 'customer'. Customer.userid is required+unique, so unlike the old code
 // this enforces the FK instead of silently failing validation.
-app.post('/api/customers', async (req, res) => {
+app.post('/api/customers', asyncHandler(async (req, res) => {
   const { userid, c_name, c_street, c_city } = req.body || {};
 
   if (!isNonEmptyString(userid) || !isNonEmptyString(c_name) ||
@@ -271,11 +303,11 @@ app.post('/api/customers', async (req, res) => {
     console.error('Error creating customer:', error);
     res.status(500).json({ message: 'Failed to create customer.' });
   }
-});
+}));
 
 // ============================== LOANS ==============================
 
-app.get('/api/loans', async (req, res) => {
+app.get('/api/loans', asyncHandler(async (req, res) => {
   try {
     const loans = await Loan.find().sort({ l_no: 1 });
     res.json(loans);
@@ -283,10 +315,10 @@ app.get('/api/loans', async (req, res) => {
     console.error('Error fetching loans:', error);
     res.status(500).json({ message: 'Failed to fetch loans.' });
   }
-});
+}));
 
 // Staff-side loan creation (admin / senior_manager / branch_manager).
-app.post('/api/loans', async (req, res) => {
+app.post('/api/loans', asyncHandler(async (req, res) => {
   const { amt, b_name, borrowers, c_id } = req.body || {};
 
   if (!isPositiveFiniteNumber(amt) || !isNonEmptyString(b_name)) {
@@ -325,10 +357,10 @@ app.post('/api/loans', async (req, res) => {
     console.error('Error creating loan:', error);
     res.status(500).json({ message: 'Failed to create loan.' });
   }
-});
+}));
 
 // Self-service loan application by a logged-in customer.
-app.post('/api/customer/loans', async (req, res) => {
+app.post('/api/customer/loans', strictLimiter, asyncHandler(async (req, res) => {
   const { amt, b_name, aadharNumber } = req.body || {};
 
   if (!isPositiveFiniteNumber(amt) || !isNonEmptyString(b_name) || !isNonEmptyString(aadharNumber)) {
@@ -367,9 +399,9 @@ app.post('/api/customer/loans', async (req, res) => {
     console.error('Error creating customer loan:', error);
     res.status(500).json({ message: 'Failed to create loan.' });
   }
-});
+}));
 
-app.put('/api/loans/:id/status', async (req, res) => {
+app.put('/api/loans/:id/status', asyncHandler(async (req, res) => {
   const { status } = req.body || {};
   if (!LOAN_STATUSES.includes(status)) {
     return res.status(400).json({ message: `Invalid status. Must be one of: ${LOAN_STATUSES.join(', ')}.` });
@@ -402,12 +434,12 @@ app.put('/api/loans/:id/status', async (req, res) => {
     console.error('Error updating loan status:', error);
     res.status(500).json({ message: 'Failed to update loan status.' });
   }
-});
+}));
 
 // ============================== ACCOUNTS ==============================
 
 // Staff-side account opening for an existing customer at an existing branch.
-app.post('/api/accounts', async (req, res) => {
+app.post('/api/accounts', asyncHandler(async (req, res) => {
   const { userid, b_name, initialBalance } = req.body || {};
 
   if (!isNonEmptyString(userid) || !isNonEmptyString(b_name)) {
@@ -451,9 +483,9 @@ app.post('/api/accounts', async (req, res) => {
     console.error('Error creating account:', error);
     res.status(500).json({ message: 'Failed to create account.' });
   }
-});
+}));
 
-app.get('/api/accounts', async (req, res) => {
+app.get('/api/accounts', asyncHandler(async (req, res) => {
   try {
     const accounts = await Account.find().sort({ ac_no: 1 });
     res.json(accounts);
@@ -461,10 +493,10 @@ app.get('/api/accounts', async (req, res) => {
     console.error('Error fetching accounts:', error);
     res.status(500).json({ message: 'Failed to fetch accounts.' });
   }
-});
+}));
 
 // Accounts belonging to one user — the account holder themselves, or staff.
-app.get('/api/accounts/user/:userid', async (req, res) => {
+app.get('/api/accounts/user/:userid', asyncHandler(async (req, res) => {
   const requestingUser = await getRequestingUser(req);
   if (!requestingUser) {
     return res.status(401).json({ message: 'Authentication required.' });
@@ -483,9 +515,9 @@ app.get('/api/accounts/user/:userid', async (req, res) => {
     console.error('Error fetching accounts for user:', error);
     res.status(500).json({ message: 'Failed to fetch accounts.' });
   }
-});
+}));
 
-app.get('/api/accounts/:ac_no/balance', async (req, res) => {
+app.get('/api/accounts/:ac_no/balance', asyncHandler(async (req, res) => {
   const requestingUser = await getRequestingUser(req);
   if (!requestingUser) {
     return res.status(401).json({ message: 'Authentication required.' });
@@ -503,9 +535,9 @@ app.get('/api/accounts/:ac_no/balance', async (req, res) => {
   }
 
   res.json({ ac_no: account.ac_no, balance: account.balance });
-});
+}));
 
-app.post('/api/accounts/:ac_no/deposit', async (req, res) => {
+app.post('/api/accounts/:ac_no/deposit', asyncHandler(async (req, res) => {
   const { amount } = req.body || {};
   if (!isPositiveFiniteNumber(amount)) {
     return res.status(400).json({ message: 'amount must be a positive number.' });
@@ -535,9 +567,9 @@ app.post('/api/accounts/:ac_no/deposit', async (req, res) => {
     { new: true }
   );
   res.json(updated);
-});
+}));
 
-app.post('/api/accounts/:ac_no/withdraw', async (req, res) => {
+app.post('/api/accounts/:ac_no/withdraw', asyncHandler(async (req, res) => {
   const { amount } = req.body || {};
   if (!isPositiveFiniteNumber(amount)) {
     return res.status(400).json({ message: 'amount must be a positive number.' });
@@ -573,6 +605,29 @@ app.post('/api/accounts/:ac_no/withdraw', async (req, res) => {
     return res.status(400).json({ message: 'Insufficient balance.' });
   }
   res.json(updated);
+}));
+
+// ============================== ERROR HANDLING ==============================
+
+// No route matched — must come after all routes, before the error handler.
+app.use((req, res) => {
+  res.status(404).json({ message: 'Route not found.' });
+});
+
+// Centralized error handler. Every asyncHandler-wrapped route (and any
+// synchronous throw) lands here instead of hanging the request or leaking
+// a raw stack trace to the client.
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+
+  if (err.name === 'ValidationError') {
+    return res.status(400).json({ message: err.message });
+  }
+  if (err.code === 11000) {
+    return res.status(409).json({ message: 'A record with these details already exists.' });
+  }
+
+  res.status(500).json({ message: 'Something went wrong. Please try again later.' });
 });
 
 app.listen(5000, () => console.log('Backend running on port 5000'));
