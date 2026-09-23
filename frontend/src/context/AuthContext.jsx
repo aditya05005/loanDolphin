@@ -60,12 +60,19 @@ export function AuthProvider({ children }) {
     return sessionUser;
   }
 
-  function logout() {
+  async function logout() {
     setCurrentUser(null);
     try {
       sessionStorage.removeItem(SESSION_STORAGE_KEY);
     } catch {
       // Ignore sessionStorage errors
+    }
+    try {
+      // Clears the httpOnly auth cookie server-side — the client can't
+      // remove it directly.
+      await apiRequest('/users/logout', { method: 'POST' });
+    } catch {
+      // Cookie may already be expired/invalid; local state is cleared regardless.
     }
   }
 

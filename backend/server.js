@@ -4,6 +4,8 @@ import mongoose from 'mongoose';
 import cors from 'cors';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
+import jwt from 'jsonwebtoken';
+import cookieParser from 'cookie-parser';
 
 import Branch from './models/Branch.js';
 import Customer from './models/Customer.js';
@@ -14,16 +16,44 @@ import Account from './models/Account.js';
 
 const app = express();
 app.use(express.json());
+app.use(cookieParser());
 
 // cors() middleware already answers OPTIONS preflight requests on its own —
 // a separate `app.options('*', cors())` is not needed and throws a PathError
 // on Express 5 (wildcard string routes were removed). Do not re-add it.
+// origin: true reflects the request's Origin header (required for
+// credentialed/cookie requests — '*' is not allowed with credentials: true).
 app.use(cors({
   origin: true,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-user-id']
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
+// ---------- auth (JWT via httpOnly cookie) ----------
+
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET is not set. Add it to backend/.env before starting the server.');
+}
+const JWT_EXPIRES_IN = '1h';
+const TOKEN_COOKIE = 'token';
+const TOKEN_MAX_AGE_MS = 60 * 60 * 1000; // 1 hour, matches JWT_EXPIRES_IN
+
+const isProduction = process.env.NODE_ENV === 'production';
+
+const cookieOptions = {
+  httpOnly: true,
+  secure: isProduction,
+  // 'none' is required for cross-site cookies (e.g. frontend and backend on
+  // different hosts, as in the Codespaces setup) and requires secure: true.
+  // 'lax' is fine for local dev where both run on localhost.
+  sameSite: isProduction ? 'none' : 'lax',
+  maxAge: TOKEN_MAX_AGE_MS
+};
+
+const signToken = (user) =>
+  jwt.sign({ userid: user.userid, type: user.type }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 
 const ROLES = ['branch_manager', 'senior_manager', 'administrator', 'customer'];
 const LOAN_STATUSES = ['Pending', 'Approved', 'Rejected'];
@@ -62,9 +92,20 @@ const asyncHandler = (fn) => (req, res, next) => {
 // ---------- strict helpers (no loose coercion, no silent fallbacks) ----------
 
 const getRequestingUser = async (req) => {
-  const userid = req.body?.currentUserId || req.headers['x-user-id'];
-  if (!userid || typeof userid !== 'string') return null;
-  return User.findOne({ userid });
+  const token = req.cookies?.[TOKEN_COOKIE];
+  if (!token) return null;
+
+  let payload;
+  try {
+    payload = jwt.verify(token, JWT_SECRET);
+  } catch {
+    // Expired or tampered token — treat exactly like no token.
+    return null;
+  }
+
+  // Re-fetch rather than trusting the payload's `type` verbatim, so a role
+  // change (or account deletion) takes effect before the token's 1h expiry.
+  return User.findOne({ userid: payload.userid });
 };
 
 const isPositiveFiniteNumber = (value) =>
@@ -123,8 +164,15 @@ app.post('/api/users/login', strictLimiter, asyncHandler(async (req, res) => {
     return res.status(401).json({ message: 'Invalid user ID or password.' });
   }
 
+  const token = signToken(user);
+  res.cookie(TOKEN_COOKIE, token, cookieOptions);
   return res.json({ userid: user.userid, type: user.type, message: 'Login successful' });
 }));
+
+app.post('/api/users/logout', (req, res) => {
+  res.clearCookie(TOKEN_COOKIE, cookieOptions);
+  res.json({ message: 'Logged out' });
+});
 
 app.post('/api/users/register', strictLimiter, asyncHandler(async (req, res) => {
   const { userid, password, type, c_name, c_street, c_city } = req.body || {};
@@ -167,6 +215,8 @@ app.post('/api/users/register', strictLimiter, asyncHandler(async (req, res) => 
       c_city: c_city.trim()
     });
 
+    const token = signToken(user);
+    res.cookie(TOKEN_COOKIE, token, cookieOptions);
     return res.status(201).json({
       userid: user.userid,
       type: user.type,
