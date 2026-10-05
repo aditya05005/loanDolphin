@@ -11,6 +11,7 @@ import { useAuth } from "./context/AuthContext";
 import { useTheme } from "./context/ThemeContext";
 import CustomerDashboard from "./components/CustomerDashboard";
 import LoanApplicationForm from "./components/LoanApplicationForm";
+import ManagerDashboard from "./components/ManagerDashboard";
 
 const BRANCHES_STORAGE_KEY = "loanDolphinBranches";
 const CUSTOMERS_STORAGE_KEY = "loanDolphinCustomers";
@@ -53,10 +54,10 @@ export default function App() {
   const [managers, setManagers] = useState(getManagers);
   const [currentView, setCurrentView] = useState("landing");
   const [customerView, setCustomerView] = useState("dashboard"); // "dashboard" or "apply"
+  const [customerAccount, setCustomerAccount] = useState(null);
 
   async function addCustomerLoan(newLoan) {
-    // The backend identifies the applicant from the x-user-id header
-    // (attached automatically by apiRequest) rather than a body field, so
+    // The backend identifies the applicant from the authenticated cookie rather than a body field, so
     // there's nothing identity-related to add to the payload here.
     const savedLoan = await apiRequest('/customer/loans', {
       method: 'POST',
@@ -69,6 +70,7 @@ export default function App() {
   useEffect(() => {
     if (!currentUser) {
       setCurrentView("landing");
+      setCustomerAccount(null);
     }
   }, [currentUser]);
 
@@ -103,10 +105,10 @@ export default function App() {
   // active session to the newly created account, which would log the staff
   // member out of their own session.
   async function addCustomer(newCustomer) {
-    const { userid, password, c_name, c_street, c_city } = newCustomer;
+    const { userid, password, c_name, c_street, c_city, aadharNumber, panCard } = newCustomer;
     const response = await apiRequest('/users/register', {
       method: 'POST',
-      body: JSON.stringify({ userid, password, type: 'customer', c_name, c_street, c_city })
+      body: JSON.stringify({ userid, password, type: 'customer', c_name, c_street, c_city, aadharNumber, panCard })
     });
     const savedCustomer = {
       c_id: response.c_id,
@@ -168,18 +170,33 @@ export default function App() {
 
     async function loadData() {
       try {
-        const [branchData, customerData, loanData, managerData] = await Promise.all([
-          apiRequest('/branches'),
-          apiRequest('/customers'),
-          apiRequest('/loans'),
-          apiRequest('/managers').catch(() => [])
-        ]);
+        if (currentUser.type === "customer") {
+          const [branchData, loanData, accountData] = await Promise.all([
+            apiRequest('/branches').catch(() => []),
+            apiRequest('/customer/loans').catch(() => []),
+            apiRequest(`/accounts/user/${currentUser.userid}`).catch(() => null)
+          ]);
+          if (branchData) setBranches(branchData);
+          if (loanData) setLoans(loanData);
+          if (accountData) {
+             // API might return array or single account
+             const account = Array.isArray(accountData) ? accountData[0] : accountData;
+             setCustomerAccount(account);
+          }
+        } else {
+          const [branchData, customerData, loanData, managerData] = await Promise.all([
+            apiRequest('/branches'),
+            apiRequest('/customers'),
+            apiRequest('/loans'),
+            apiRequest('/managers').catch(() => [])
+          ]);
 
-        if (branchData) setBranches(branchData);
-        if (customerData) setCustomers(customerData);
-        if (loanData) setLoans(loanData);
-        if (managerData && Array.isArray(managerData)) {
-          setManagers(managerData);
+          if (branchData) setBranches(branchData);
+          if (customerData) setCustomers(customerData);
+          if (loanData) setLoans(loanData);
+          if (managerData && Array.isArray(managerData)) {
+            setManagers(managerData);
+          }
         }
       } catch (error) {
         console.error('Failed to load app data:', error);
@@ -210,8 +227,10 @@ export default function App() {
         <Navbar />
         <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
           <CustomerDashboard
-            loans={loans.filter(l => l.customerUserId === currentUser.userid)}
+          loans={loans}
             onApply={() => setCustomerView("apply")}
+            balance={customerAccount?.balance || 0}
+            branchName={customerAccount?.b_name || "-"}
           />
         </main>
       </div>
@@ -253,41 +272,18 @@ export default function App() {
   return (
     <div className="min-h-screen bg-white dark:bg-slate-900">
       <Navbar />
-
-      <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Bank Loan Dashboard</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            Overview of loans, branches, and applications
-          </p>
-          <p className="mt-2 text-sm text-emerald-600 dark:text-emerald-400">
-            Logged in as <span className="font-semibold">{currentUser.userid}</span> ({currentUser.type.replace("_", " ")})
-          </p>
-        </div>
-
-        <MetricsOverview loans={loans} branches={branches} />
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-6">
-            <ActiveLoansTable loans={loans} customers={customers} currentUser={currentUser} managerBranch={managerBranch} onUpdateLoanStatus={updateLoanStatus} />
-            <BranchCards
-              branches={branches}
-              managers={managers}
-              currentUser={currentUser}
-              onCreateBranch={handleCreateBranch}
-            />
-          </div>
-          <div>
-            <LoanForm
-              branches={branches}
-              customers={customers}
-              loans={loans}
-              onAddLoan={addLoan}
-              onAddCustomer={addCustomer}
-            />
-          </div>
-        </div>
-      </main>
+      <ManagerDashboard
+        currentUser={currentUser}
+        loans={loans}
+        branches={branches}
+        customers={customers}
+        managers={managers}
+        managerBranch={managerBranch}
+        updateLoanStatus={updateLoanStatus}
+        handleCreateBranch={handleCreateBranch}
+        addLoan={addLoan}
+        addCustomer={addCustomer}
+      />
     </div>
   );
 }

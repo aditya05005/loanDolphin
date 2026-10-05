@@ -14,7 +14,9 @@ export default function LoanForm({ branches, customers, loans, onAddLoan, onAddC
     password: "",
     c_name: "",
     c_street: "",
-    c_city: ""
+    c_city: "",
+    aadharNumber: "",
+    panCard: ""
   });
 
   const [feedback, setFeedback] = useState(null);
@@ -42,9 +44,11 @@ const nextLoanNumber = "(will be assigned)";
     const name = customerForm.c_name.trim();
     const street = customerForm.c_street.trim();
     const city = customerForm.c_city.trim();
+    const aadharNumber = customerForm.aadharNumber.trim();
+    const panCard = customerForm.panCard.trim();
 
-    if (!userid || !password || !name || !street || !city) {
-      setFeedback({ type: "error", text: "Login ID, password, name, street, and city are all required." });
+    if (!userid || !password || !name || !street || !city || !aadharNumber || !panCard) {
+      setFeedback({ type: "error", text: "Login ID, password, name, street, city, Aadhar, and PAN are all required." });
       return;
     }
 
@@ -52,8 +56,8 @@ const nextLoanNumber = "(will be assigned)";
       // Every customer needs a real login now, so this creates the User
       // account and the linked Customer record together — c_id comes back
       // from the server rather than being made up on the client.
-      const savedCustomer = await onAddCustomer({ userid, password, c_name: name, c_street: street, c_city: city });
-      setCustomerForm({ userid: "", password: "", c_name: "", c_street: "", c_city: "" });
+      const savedCustomer = await onAddCustomer({ userid, password, c_name: name, c_street: street, c_city: city, aadharNumber, panCard });
+      setCustomerForm({ userid: "", password: "", c_name: "", c_street: "", c_city: "", aadharNumber: "", panCard: "" });
       setFormData((prev) => ({ ...prev, c_id: String(savedCustomer.c_id) }));
       setFeedback({ type: "success", text: `${name} was added successfully.` });
     } catch (err) {
@@ -80,7 +84,7 @@ const nextLoanNumber = "(will be assigned)";
 
     onAddLoan({
       l_no: nextLoanNumber,
-      c_id: Number(formData.c_id),
+      c_id: formData.c_id,
       b_name: formData.b_name,
       amt: amountNumber,
       loan_date: formData.loan_date,
@@ -165,6 +169,8 @@ const nextLoanNumber = "(will be assigned)";
                   placeholder="City"
                   className={inputClasses}
                 />
+                <input type="text" name="aadharNumber" value={customerForm.aadharNumber} onChange={handleCustomerFormChange} placeholder="Aadhar number" className={inputClasses} />
+                <input type="text" name="panCard" value={customerForm.panCard} onChange={handleCustomerFormChange} placeholder="PAN card" className={inputClasses} />
                 <button type="button" onClick={handleCustomerSubmit} className="rounded-lg bg-slate-800 px-3 py-2 text-xs font-medium text-white dark:bg-slate-700">
                   Add Customer
                 </button>

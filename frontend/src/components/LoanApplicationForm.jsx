@@ -10,8 +10,6 @@ import React, { useState } from "react";
 export default function LoanApplicationForm({ branches, onSubmit, onCancel }) {
   const [form, setForm] = useState({
     amt: "",
-    aadharNumber: "",
-    panCard: "",
     b_name: branches.length > 0 ? branches[0].b_name : ""
   });
   const [error, setError] = useState("");
@@ -24,16 +22,14 @@ export default function LoanApplicationForm({ branches, onSubmit, onCancel }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const { amt, aadharNumber, panCard, b_name } = form;
-    if (!amt || !aadharNumber || !panCard || !b_name) {
+    const { amt, b_name } = form;
+    if (!amt || !b_name) {
       setError("All fields are required.");
       return;
     }
     // Build loan payload expected by the backend.
     const loanPayload = {
       amt: Number(amt),
-      aadharNumber: aadharNumber.trim(),
-      panCard: panCard.trim(),
       b_name: b_name.trim()
     };
     try {
@@ -59,30 +55,6 @@ export default function LoanApplicationForm({ branches, onSubmit, onCancel }) {
           onChange={handleChange}
           className="w-full rounded border p-2"
           placeholder="Enter amount"
-          required
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium mb-1">Aadhar Number</label>
-        <input
-          type="text"
-          name="aadharNumber"
-          value={form.aadharNumber}
-          onChange={handleChange}
-          className="w-full rounded border p-2"
-          placeholder="Enter Aadhar"
-          required
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium mb-1">PAN Card</label>
-        <input
-          type="text"
-          name="panCard"
-          value={form.panCard}
-          onChange={handleChange}
-          className="w-full rounded border p-2"
-          placeholder="Enter PAN Card"
           required
         />
       </div>

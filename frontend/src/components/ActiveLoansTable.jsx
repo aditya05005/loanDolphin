@@ -3,6 +3,7 @@
 // for senior managers and administrators.
 
 import { useState } from "react";
+import { useAuth } from "../context/AuthContext";
 
 function statusColor(status) {
   if (status === "Approved") {
@@ -11,16 +12,19 @@ function statusColor(status) {
   if (status === "Rejected") {
     return "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400";
   }
+  if (status === "Disbursed") {
+    return "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400";
+  }
   return "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400";
 }
 
 export default function ActiveLoansTable({
   loans = [],
   customers = [],
-  currentUser = null,
   onUpdateLoanStatus = null,
   managerBranch = null
 }) {
+  const { currentUser } = useAuth();
   const [statusFilter, setStatusFilter] = useState("All");
   const [updatingId, setUpdatingId] = useState(null);
   const [actionError, setActionError] = useState("");
@@ -167,7 +171,7 @@ export default function ActiveLoansTable({
                     {canManageLoan(loan) && (
                       <td className="py-3 pr-4">
                         <div className="flex items-center gap-1.5">
-                          {currentLoanStatus !== "Approved" && (
+                          {currentLoanStatus !== "Approved" && currentLoanStatus !== "Disbursed" && (
                             <button
                               type="button"
                               onClick={() => handleStatusChange(loan, "Approved")}
@@ -178,7 +182,18 @@ export default function ActiveLoansTable({
                               Approve
                             </button>
                           )}
-                          {currentLoanStatus !== "Rejected" && (
+                          {currentLoanStatus === "Approved" && (currentUser?.type === "branch_manager" || currentUser?.type === "senior_manager") && (
+                            <button
+                              type="button"
+                              onClick={() => handleStatusChange(loan, "Disbursed")}
+                              disabled={isUpdating}
+                              className="rounded bg-blue-100 hover:bg-blue-200 px-2 py-1 text-[10px] font-semibold text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 dark:hover:bg-blue-900 transition cursor-pointer disabled:opacity-50"
+                              title="Disburse Loan"
+                            >
+                              Disburse
+                            </button>
+                          )}
+                          {currentLoanStatus !== "Rejected" && currentLoanStatus !== "Disbursed" && (
                             <button
                               type="button"
                               onClick={() => handleStatusChange(loan, "Rejected")}

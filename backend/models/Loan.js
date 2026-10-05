@@ -11,7 +11,7 @@ const loanSchema = new mongoose.Schema({
   payments:       [{ amount: { type: Number }, date: { type: Date, default: Date.now } }],
   status: {
     type: String,
-    enum: ['Pending', 'Approved', 'Rejected'],
+    enum: ['Pending', 'Approved', 'Rejected', 'Disbursed'],
     default: 'Pending'
   }
 });

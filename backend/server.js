@@ -56,14 +56,14 @@ const signToken = (user) =>
   jwt.sign({ userid: user.userid, type: user.type }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 
 const ROLES = ['branch_manager', 'senior_manager', 'administrator', 'customer'];
-const LOAN_STATUSES = ['Pending', 'Approved', 'Rejected'];
+const LOAN_STATUSES = ['Pending', 'Approved', 'Rejected', 'Disbursed'];
 
 // ---------- rate limiting ----------
 
 // Baseline limiter for all API traffic.
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 300,
+  max: 3000,
   standardHeaders: true,
   legacyHeaders: false,
   message: { message: 'Too many requests. Please try again later.' }
@@ -175,7 +175,7 @@ app.post('/api/users/logout', (req, res) => {
 });
 
 app.post('/api/users/register', strictLimiter, asyncHandler(async (req, res) => {
-  const { userid, password, type, c_name, c_street, c_city } = req.body || {};
+  const { userid, password, type, c_name, c_street, c_city, aadharNumber, panCard } = req.body || {};
 
   if (!isNonEmptyString(userid) || !isNonEmptyString(password)) {
     return res.status(400).json({ message: 'User ID and password are required.' });
@@ -188,7 +188,10 @@ app.post('/api/users/register', strictLimiter, asyncHandler(async (req, res) => 
     });
   }
 
-  const requestedType = ROLES.includes(type) ? type : 'customer';
+  if (type !== undefined && !ROLES.includes(type)) {
+    return res.status(400).json({ message: 'Invalid user type.' });
+  }
+  const requestedType = type || 'customer';
   if (requestedType !== 'customer') {
     // branch_manager / senior_manager accounts are provisioned by an admin
     // (see POST /api/branches), never self-registered.
@@ -200,8 +203,8 @@ app.post('/api/users/register', strictLimiter, asyncHandler(async (req, res) => 
     return res.status(409).json({ message: 'User already exists.' });
   }
 
-  if (!isNonEmptyString(c_name) || !isNonEmptyString(c_street) || !isNonEmptyString(c_city)) {
-    return res.status(400).json({ message: 'Customer name, street, and city are required.' });
+  if (!isNonEmptyString(c_name) || !isNonEmptyString(c_street) || !isNonEmptyString(c_city) || !isNonEmptyString(aadharNumber) || !isNonEmptyString(panCard)) {
+    return res.status(400).json({ message: 'Customer name, street, city, Aadhar number, and PAN card are required.' });
   }
 
   try {
@@ -212,7 +215,9 @@ app.post('/api/users/register', strictLimiter, asyncHandler(async (req, res) => 
       userid: user.userid,
       c_name: c_name.trim(),
       c_street: c_street.trim(),
-      c_city: c_city.trim()
+      c_city: c_city.trim(),
+      aadharNumber: aadharNumber.trim(),
+      panCard: panCard.trim()
     });
 
     const token = signToken(user);
@@ -297,6 +302,10 @@ app.post('/api/branches', asyncHandler(async (req, res) => {
 // ============================== MANAGERS ==============================
 
 app.get('/api/managers', asyncHandler(async (req, res) => {
+  const requestingUser = await getRequestingUser(req);
+  if (!requestingUser || !['administrator', 'senior_manager', 'branch_manager'].includes(requestingUser.type)) {
+    return res.status(requestingUser ? 403 : 401).json({ message: 'Access denied.' });
+  }
   try {
     const managers = await Manager.find().sort({ b_name: 1 });
     res.json(managers);
@@ -309,6 +318,10 @@ app.get('/api/managers', asyncHandler(async (req, res) => {
 // ============================== CUSTOMERS ==============================
 
 app.get('/api/customers', asyncHandler(async (req, res) => {
+  const requestingUser = await getRequestingUser(req);
+  if (!requestingUser || !['administrator', 'senior_manager', 'branch_manager'].includes(requestingUser.type)) {
+    return res.status(requestingUser ? 403 : 401).json({ message: 'Access denied.' });
+  }
   try {
     const customers = await Customer.find().sort({ c_name: 1 });
     res.json(customers);
@@ -322,11 +335,16 @@ app.get('/api/customers', asyncHandler(async (req, res) => {
 // 'customer'. Customer.userid is required+unique, so unlike the old code
 // this enforces the FK instead of silently failing validation.
 app.post('/api/customers', asyncHandler(async (req, res) => {
-  const { userid, c_name, c_street, c_city } = req.body || {};
+  const { userid, c_name, c_street, c_city, aadharNumber, panCard } = req.body || {};
 
   if (!isNonEmptyString(userid) || !isNonEmptyString(c_name) ||
-      !isNonEmptyString(c_street) || !isNonEmptyString(c_city)) {
-    return res.status(400).json({ message: 'userid, name, street, and city are required.' });
+      !isNonEmptyString(c_street) || !isNonEmptyString(c_city) || !isNonEmptyString(aadharNumber) || !isNonEmptyString(panCard)) {
+    return res.status(400).json({ message: 'userid, name, street, city, Aadhar number, and PAN card are required.' });
+  }
+
+  const requestingUser = await getRequestingUser(req);
+  if (!requestingUser || !['administrator', 'senior_manager', 'branch_manager'].includes(requestingUser.type)) {
+    return res.status(requestingUser ? 403 : 401).json({ message: 'Access denied.' });
   }
 
   const linkedUser = await User.findOne({ userid: userid.trim() });
@@ -346,7 +364,9 @@ app.post('/api/customers', asyncHandler(async (req, res) => {
       userid: linkedUser.userid,
       c_name: c_name.trim(),
       c_street: c_street.trim(),
-      c_city: c_city.trim()
+      c_city: c_city.trim(),
+      aadharNumber: aadharNumber.trim(),
+      panCard: panCard.trim()
     });
     res.status(201).json(customer);
   } catch (error) {
@@ -358,8 +378,18 @@ app.post('/api/customers', asyncHandler(async (req, res) => {
 // ============================== LOANS ==============================
 
 app.get('/api/loans', asyncHandler(async (req, res) => {
+  const requestingUser = await getRequestingUser(req);
+  if (!requestingUser || !['administrator', 'senior_manager', 'branch_manager'].includes(requestingUser.type)) {
+    return res.status(requestingUser ? 403 : 401).json({ message: 'Access denied.' });
+  }
   try {
-    const loans = await Loan.find().sort({ l_no: 1 });
+    const filter = {};
+    if (requestingUser.type === 'branch_manager') {
+      const manager = await Manager.findOne({ userid: requestingUser.userid });
+      if (!manager) return res.status(403).json({ message: 'Access denied.' });
+      filter.b_name = manager.b_name;
+    }
+    const loans = await Loan.find(filter).sort({ l_no: 1 });
     res.json(loans);
   } catch (error) {
     console.error('Error fetching loans:', error);
@@ -374,6 +404,9 @@ app.post('/api/loans', asyncHandler(async (req, res) => {
   if (!isPositiveFiniteNumber(amt) || !isNonEmptyString(b_name)) {
     return res.status(400).json({ message: 'A positive amount and a branch are required.' });
   }
+  if (!isNonEmptyString(c_id)) {
+    return res.status(400).json({ message: 'A customer c_id is required.' });
+  }
 
   const requestingUser = await getRequestingUser(req);
   if (!requestingUser || !['administrator', 'senior_manager', 'branch_manager'].includes(requestingUser.type)) {
@@ -383,6 +416,11 @@ app.post('/api/loans', asyncHandler(async (req, res) => {
   const branch = await Branch.findOne({ b_name });
   if (!branch) {
     return res.status(400).json({ message: 'b_name does not match an existing branch.' });
+  }
+
+  const customer = isNonEmptyString(c_id) ? await Customer.findOne({ c_id }) : null;
+  if (c_id && !customer) {
+    return res.status(400).json({ message: 'c_id does not match an existing customer.' });
   }
 
   if (requestingUser.type === 'branch_manager') {
@@ -397,8 +435,9 @@ app.post('/api/loans', asyncHandler(async (req, res) => {
       l_no: crypto.randomUUID(),
       amt,
       b_name: branch.b_name,
-      c_id: isNonEmptyString(c_id) ? c_id : undefined,
-      borrowers: Array.isArray(borrowers) ? borrowers.map(String) : [],
+      c_id: customer?.c_id,
+      customerUserId: customer?.userid,
+      borrowers: customer ? [customer.c_id] : (Array.isArray(borrowers) ? borrowers.map(String) : []),
       loan_date: new Date(),
       status: 'Pending'
     });
@@ -411,10 +450,10 @@ app.post('/api/loans', asyncHandler(async (req, res) => {
 
 // Self-service loan application by a logged-in customer.
 app.post('/api/customer/loans', strictLimiter, asyncHandler(async (req, res) => {
-  const { amt, b_name, aadharNumber } = req.body || {};
+  const { amt, b_name } = req.body || {};
 
-  if (!isPositiveFiniteNumber(amt) || !isNonEmptyString(b_name) || !isNonEmptyString(aadharNumber)) {
-    return res.status(400).json({ message: 'Amount, branch, and Aadhar number are required.' });
+  if (!isPositiveFiniteNumber(amt) || !isNonEmptyString(b_name)) {
+    return res.status(400).json({ message: 'A positive amount and branch are required.' });
   }
 
   const requestingUser = await getRequestingUser(req);
@@ -437,7 +476,6 @@ app.post('/api/customer/loans', strictLimiter, asyncHandler(async (req, res) => 
       l_no: crypto.randomUUID(),
       amt,
       b_name: branch.b_name,
-      aadharNumber: aadharNumber.trim(),
       customerUserId: requestingUser.userid,
       c_id: customer.c_id,
       borrowers: [customer.c_id],
@@ -451,6 +489,17 @@ app.post('/api/customer/loans', strictLimiter, asyncHandler(async (req, res) => 
   }
 }));
 
+app.get('/api/customer/loans', asyncHandler(async (req, res) => {
+  const requestingUser = await getRequestingUser(req);
+  if (!requestingUser) return res.status(401).json({ message: 'Authentication required.' });
+  if (requestingUser.type !== 'customer') return res.status(403).json({ message: 'Customer login required.' });
+  const customer = await Customer.findOne({ userid: requestingUser.userid });
+  const ownership = [{ customerUserId: requestingUser.userid }];
+  if (customer) ownership.push({ c_id: customer.c_id });
+  const loans = await Loan.find({ $or: ownership }).sort({ loan_date: -1 });
+  res.json(loans);
+}));
+
 app.put('/api/loans/:id/status', asyncHandler(async (req, res) => {
   const { status } = req.body || {};
   if (!LOAN_STATUSES.includes(status)) {
@@ -460,6 +509,10 @@ app.put('/api/loans/:id/status', asyncHandler(async (req, res) => {
   const requestingUser = await getRequestingUser(req);
   if (!requestingUser || !['senior_manager', 'administrator', 'branch_manager'].includes(requestingUser.type)) {
     return res.status(403).json({ message: 'Access denied: Insufficient permissions.' });
+  }
+
+  if (status === 'Disbursed' && requestingUser.type === 'administrator') {
+    return res.status(403).json({ message: 'Access denied: Administrators cannot disburse loans.' });
   }
 
   // l_no is always a UUID string now, never a Mongo ObjectId, so look it up
@@ -476,7 +529,33 @@ app.put('/api/loans/:id/status', asyncHandler(async (req, res) => {
     }
   }
 
+  const allowedTransitions = {
+    Pending: ['Approved', 'Rejected'],
+    Approved: ['Rejected', 'Disbursed'],
+    Rejected: [],
+    Disbursed: []
+  };
+  if (loan.status !== status && !allowedTransitions[loan.status]?.includes(status)) {
+    return res.status(409).json({ message: `Cannot change loan status from ${loan.status} to ${status}.` });
+  }
+
   try {
+    if (status === 'Disbursed' && loan.status !== 'Disbursed') {
+      // Find the customer's account to deposit the loan amount
+      // We will look for an account linked to the customer's userid
+      const customerUserId = loan.customerUserId;
+      let account = await Account.findOne({ userid: customerUserId });
+      if (!account) {
+        return res.status(400).json({ message: 'Cannot disburse: Customer has no account.' });
+      }
+      
+      // Deposit loan amount to account
+      await Account.findOneAndUpdate(
+        { ac_no: account.ac_no },
+        { $inc: { balance: loan.amt } }
+      );
+    }
+    
     loan.status = status;
     await loan.save();
     res.json(loan);
@@ -536,8 +615,18 @@ app.post('/api/accounts', asyncHandler(async (req, res) => {
 }));
 
 app.get('/api/accounts', asyncHandler(async (req, res) => {
+  const requestingUser = await getRequestingUser(req);
+  if (!requestingUser || !['administrator', 'senior_manager', 'branch_manager'].includes(requestingUser.type)) {
+    return res.status(requestingUser ? 403 : 401).json({ message: 'Access denied.' });
+  }
   try {
-    const accounts = await Account.find().sort({ ac_no: 1 });
+    const filter = {};
+    if (requestingUser.type === 'branch_manager') {
+      const manager = await Manager.findOne({ userid: requestingUser.userid });
+      if (!manager) return res.status(403).json({ message: 'Access denied.' });
+      filter.b_name = manager.b_name;
+    }
+    const accounts = await Account.find(filter).sort({ ac_no: 1 });
     res.json(accounts);
   } catch (error) {
     console.error('Error fetching accounts:', error);
@@ -559,7 +648,13 @@ app.get('/api/accounts/user/:userid', asyncHandler(async (req, res) => {
   }
 
   try {
-    const accounts = await Account.find({ userid: req.params.userid }).sort({ ac_no: 1 });
+    const filter = { userid: req.params.userid };
+    if (requestingUser.type === 'branch_manager') {
+      const manager = await Manager.findOne({ userid: requestingUser.userid });
+      if (!manager) return res.status(403).json({ message: 'Access denied.' });
+      filter.b_name = manager.b_name;
+    }
+    const accounts = await Account.find(filter).sort({ ac_no: 1 });
     res.json(accounts);
   } catch (error) {
     console.error('Error fetching accounts for user:', error);
@@ -582,6 +677,12 @@ app.get('/api/accounts/:ac_no/balance', asyncHandler(async (req, res) => {
   const isStaff = ['administrator', 'senior_manager', 'branch_manager'].includes(requestingUser.type);
   if (!isSelf && !isStaff) {
     return res.status(403).json({ message: 'Access denied.' });
+  }
+  if (requestingUser.type === 'branch_manager') {
+    const manager = await Manager.findOne({ userid: requestingUser.userid });
+    if (!manager || manager.b_name !== account.b_name) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
   }
 
   res.json({ ac_no: account.ac_no, balance: account.balance });

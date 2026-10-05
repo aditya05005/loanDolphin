@@ -6,20 +6,33 @@ import React from "react";
  *   loans: Array of loan objects belonging to the current user.
  *   onApply: Callback to switch to the loan‑application view.
  */
-export default function CustomerDashboard({ loans, onApply }) {
+export default function CustomerDashboard({ loans, onApply, balance = 0, branchName = "-" }) {
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h2 className="text-2xl font-semibold text-slate-900 dark:text-white">
           My Loans
         </h2>
-        <button
-          type="button"
-          onClick={onApply}
-          className="inline-flex items-center gap-1.5 rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-500"
-        >
-          Apply for Loan
-        </button>
+        <div className="flex items-center gap-4">
+          <div className="flex gap-4 p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm">
+            <div className="flex flex-col">
+              <span className="text-xs text-slate-500 dark:text-slate-400">Account Balance</span>
+              <span className="font-semibold text-slate-800 dark:text-slate-200">${balance}</span>
+            </div>
+            <div className="w-px bg-slate-200 dark:bg-slate-700"></div>
+            <div className="flex flex-col">
+              <span className="text-xs text-slate-500 dark:text-slate-400">Branch</span>
+              <span className="font-semibold text-slate-800 dark:text-slate-200">{branchName}</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onApply}
+            className="inline-flex items-center gap-1.5 rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-500 whitespace-nowrap"
+          >
+            Apply for Loan
+          </button>
+        </div>
       </div>
 
       {loans.length === 0 ? (

@@ -14,6 +14,8 @@ export default function LoginScreen({ onBack }) {
     c_name: "",
     c_street: "",
     c_city: "",
+    aadharNumber: "",
+    panCard: "",
     type: "customer",
   });
 
@@ -49,7 +51,9 @@ export default function LoginScreen({ onBack }) {
         await register(normalizedUserId, form.password, form.type, {
           c_name: form.c_name,
           c_street: form.c_street,
-          c_city: form.c_city
+          c_city: form.c_city,
+          aadharNumber: form.aadharNumber,
+          panCard: form.panCard
         });
       } catch (err) {
         setError(err.message || "Account creation failed.");
@@ -188,6 +192,14 @@ export default function LoginScreen({ onBack }) {
                         className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none focus:border-emerald-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
                         required
                       />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">Aadhar Number</label>
+                      <input type="text" name="aadharNumber" value={form.aadharNumber} onChange={onFormChange} placeholder="Enter Aadhar number" className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none focus:border-emerald-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white" required />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">PAN Card</label>
+                      <input type="text" name="panCard" value={form.panCard} onChange={onFormChange} placeholder="Enter PAN card" className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none focus:border-emerald-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white" required />
                     </div>
               </>
             )}
