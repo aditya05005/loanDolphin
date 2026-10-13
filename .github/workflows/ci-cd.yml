@@ -1,0 +1,106 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend API tests
+    runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:7
+        ports: ["27017:27017"]
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping:1})'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      JWT_SECRET: ci-only-secret
+      MONGODB_URI: mongodb://127.0.0.1:27017/loanDolphin_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+        working-directory: backend
+      - name: Syntax check
+        run: node --check server.js
+        working-directory: backend
+      - name: Start API
+        run: |
+          nohup node server.js > ../api.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -fs http://localhost:5000/api/health && exit 0
+            sleep 1
+          done
+          echo "API did not become healthy"; cat ../api.log; exit 1
+        working-directory: backend
+      - name: Run Postman collection (newman)
+        run: >
+          npx --yes newman@6 run postman/loanDolphin.postman_collection.json
+          -e postman/loanDolphin.local.postman_environment.json
+          --reporters cli
+      - name: Show API log on failure
+        if: failure()
+        run: cat api.log
+
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+
+  deploy:
+    name: Deploy to Render
+    needs: [backend, frontend]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Trigger Render deploy hook
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "::error::Secret RENDER_DEPLOY_HOOK_URL is not set (Render > service > Settings > Deploy Hook)."
+            exit 1
+          fi
+          curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL"
+          echo "Deploy requested."
+      - name: Wait for the new version to answer on /api/health
+        if: vars.APP_URL != ''
+        run: |
+          # Give Render a moment to start the new build, then poll for up to ~10 min.
+          sleep 30
+          for i in $(seq 1 40); do
+            if curl -fs "${{ vars.APP_URL }}/api/health" | grep -q '"status":"ok"'; then
+              echo "App is healthy at ${{ vars.APP_URL }}"; exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::App did not become healthy in time"; exit 1

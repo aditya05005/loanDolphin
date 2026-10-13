@@ -6,6 +6,12 @@ import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import cookieParser from 'cookie-parser';
+import http from 'http';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import cookie from 'cookie';
+import { Server as SocketServer } from 'socket.io';
 
 import Branch from './models/Branch.js';
 import Customer from './models/Customer.js';
@@ -17,18 +23,6 @@ import Account from './models/Account.js';
 const app = express();
 app.use(express.json());
 app.use(cookieParser());
-
-// cors() middleware already answers OPTIONS preflight requests on its own —
-// a separate `app.options('*', cors())` is not needed and throws a PathError
-// on Express 5 (wildcard string routes were removed). Do not re-add it.
-// origin: true reflects the request's Origin header (required for
-// credentialed/cookie requests — '*' is not allowed with credentials: true).
-app.use(cors({
-  origin: true,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
 
 // ---------- auth (JWT via httpOnly cookie) ----------
 
@@ -45,12 +39,35 @@ const isProduction = process.env.NODE_ENV === 'production';
 const cookieOptions = {
   httpOnly: true,
   secure: isProduction,
-  // 'none' is required for cross-site cookies (e.g. frontend and backend on
-  // different hosts, as in the Codespaces setup) and requires secure: true.
-  // 'lax' is fine for local dev where both run on localhost.
-  sameSite: isProduction ? 'none' : 'lax',
+  // 'none' is required for cross-site cookies (frontend and backend on
+  // different hosts, i.e. CORS_ORIGIN is set in production) and requires
+  // secure: true. 'lax' is right whenever the app is served same-origin
+  // (the Render single-service deploy) and for local dev on localhost.
+  sameSite: isProduction && process.env.CORS_ORIGIN ? 'none' : 'lax',
   maxAge: TOKEN_MAX_AGE_MS
 };
+
+// Behind Render's load balancer the real client IP arrives in X-Forwarded-For.
+// Without this every user shares the proxy's IP (breaking the rate limiters).
+if (isProduction) app.set('trust proxy', 1);
+
+// cors() middleware already answers OPTIONS preflight requests on its own —
+// a separate `app.options('*', cors())` is not needed and throws a PathError
+// on Express 5 (wildcard string routes were removed). Do not re-add it.
+// CORS_ORIGIN: comma-separated list of allowed origins. When unset, dev
+// reflects any origin (needed for credentialed requests — '*' is not allowed
+// with credentials: true) and production allows none, because the production
+// build is served by this same server (same origin, no CORS needed).
+const corsOrigin = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean)
+  : !isProduction;
+
+app.use(cors({
+  origin: corsOrigin,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 
 const signToken = (user) =>
   jwt.sign({ userid: user.userid, type: user.type }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
@@ -116,13 +133,62 @@ const isNonNegativeFiniteNumber = (value) =>
 
 const isNonEmptyString = (value) => typeof value === 'string' && value.trim().length > 0;
 
+// ---------- real-time (socket.io) ----------
+
+// Each authenticated socket joins a private room named after its user id, so
+// an event emitted to `user:<userid>` reaches only that user's open tabs.
+const userRoom = (userid) => `user:${userid}`;
+
+const server = http.createServer(app);
+const io = new SocketServer(server, {
+  cors: { origin: corsOrigin, credentials: true }
+});
+
+// Same auth as the REST API: the httpOnly JWT cookie sent with the handshake.
+io.use(async (socket, next) => {
+  try {
+    const token = cookie.parse(socket.handshake.headers.cookie || '')[TOKEN_COOKIE];
+    if (!token) return next(new Error('Authentication required.'));
+
+    let payload;
+    try {
+      payload = jwt.verify(token, JWT_SECRET);
+    } catch {
+      return next(new Error('Authentication required.'));
+    }
+
+    const user = await User.findOne({ userid: payload.userid });
+    if (!user) return next(new Error('Authentication required.'));
+
+    socket.data.userid = user.userid;
+    socket.data.tokenExp = payload.exp;
+    next();
+  } catch (err) {
+    next(new Error('Authentication failed.'));
+  }
+});
+
+io.on('connection', (socket) => {
+  socket.join(userRoom(socket.data.userid));
+
+  // The cookie expires after 1h; end the socket with it so a stale session
+  // cannot keep receiving events.
+  const msLeft = socket.data.tokenExp * 1000 - Date.now();
+  const expiryTimer = setTimeout(() => socket.disconnect(true), Math.max(msLeft, 0));
+  socket.on('disconnect', () => clearTimeout(expiryTimer));
+});
+
 // ---------- startup ----------
 
 const seedDefaultUsers = async () => {
   const adminExists = await User.findOne({ userid: 'admin' });
   if (!adminExists) {
-    await User.create({ userid: 'admin', password: 'admin123', type: 'administrator' });
-    console.log('Default admin user seeded: admin / admin123');
+    // ADMIN_PASSWORD should always be set in production; the fallback is for local dev only.
+    const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+    await User.create({ userid: 'admin', password: adminPassword, type: 'administrator' });
+    console.log(isProduction
+      ? 'Default admin user seeded: admin (password from ADMIN_PASSWORD)'
+      : 'Default admin user seeded: admin / admin123');
   }
 };
 
@@ -556,8 +622,26 @@ app.put('/api/loans/:id/status', asyncHandler(async (req, res) => {
       );
     }
     
+    const previousStatus = loan.status;
     loan.status = status;
     await loan.save();
+
+    // Tell the borrower right away. A failed push must never fail the request.
+    if (loan.customerUserId && previousStatus !== status) {
+      try {
+        io.to(userRoom(loan.customerUserId)).emit('loan_status_updated', {
+          l_no: loan.l_no,
+          amt: loan.amt,
+          b_name: loan.b_name,
+          previousStatus,
+          status: loan.status,
+          loan: loan.toObject()
+        });
+      } catch (emitError) {
+        console.error('Failed to emit loan_status_updated:', emitError);
+      }
+    }
+
     res.json(loan);
   } catch (error) {
     console.error('Error updating loan status:', error);
@@ -760,6 +844,17 @@ app.post('/api/accounts/:ac_no/withdraw', asyncHandler(async (req, res) => {
 
 // ============================== ERROR HANDLING ==============================
 
+// Serve the built React app (frontend/dist) from this same server when it
+// exists — this is how the single Render web service ships both halves.
+const frontendDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../frontend/dist');
+if (fs.existsSync(path.join(frontendDist, 'index.html'))) {
+  app.use(express.static(frontendDist));
+  // SPA fallback for client-side routes (never for API or socket.io paths).
+  app.get(/^\/(?!api(\/|$)|socket\.io(\/|$)).*/, (req, res) => {
+    res.sendFile(path.join(frontendDist, 'index.html'));
+  });
+}
+
 // No route matched — must come after all routes, before the error handler.
 app.use((req, res) => {
   res.status(404).json({ message: 'Route not found.' });
@@ -781,4 +876,5 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: 'Something went wrong. Please try again later.' });
 });
 
-app.listen(5000, () => console.log('Backend running on port 5000'));
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, () => console.log(`Backend running on port ${PORT}`));

@@ -1,5 +1,12 @@
 import React from "react";
 
+const BADGE = {
+  Pending: "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400",
+  Approved: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400",
+  Rejected: "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400",
+  Disbursed: "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400"
+};
+
 /**
  * CustomerDashboard – shows a summary of the logged‑in customer's loans.
  * Props:
@@ -50,7 +57,15 @@ export default function CustomerDashboard({ loans, onApply, balance = 0, branchN
             >
               <h3 className="font-medium text-slate-800 dark:text-slate-200">{loan.l_no}</h3>
               <p className="text-sm text-slate-600 dark:text-slate-400">Amount: ${loan.amt}</p>
-              <p className="text-sm text-slate-600 dark:text-slate-400">Status: {loan.status}</p>
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                Status:{" "}
+                <span
+                  key={loan.status}
+                  className={`ml-1 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${BADGE[loan.status] || BADGE.Pending}`}
+                >
+                  {loan.status || "Pending"}
+                </span>
+              </p>
               {loan.payments && loan.payments.length > 0 ? (
                 <div className="mt-2">
                   <p className="text-xs font-medium text-slate-700 dark:text-slate-300">Payment History</p>

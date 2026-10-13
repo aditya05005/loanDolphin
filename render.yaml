@@ -1,0 +1,28 @@
+# Render Blueprint: one web service that serves both the API/WebSocket server
+# and the built React app (same origin, so the login cookie and socket.io work
+# without any CORS setup).
+#
+# Deploys are triggered by the GitHub Actions workflow (.github/workflows/ci-cd.yml)
+# through this service's Deploy Hook, only after CI passes on main.
+services:
+  - type: web
+    name: loandolphin
+    runtime: node
+    plan: free
+    buildCommand: npm --prefix frontend ci --include=dev && npm --prefix frontend run build && npm --prefix backend ci
+    startCommand: npm --prefix backend start
+    healthCheckPath: /api/health
+    autoDeployTrigger: "off"
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_PASSWORD
+        generateValue: true
+      # MongoDB Atlas connection string (Render has no managed MongoDB).
+      # Render asks for this value when the Blueprint is first created.
+      - key: MONGODB_URI
+        sync: false

@@ -1,19 +1,26 @@
 // Central API helper for the frontend so login, branches, customers, and loans all use the same backend endpoint pattern.
 // In Codespaces, dynamically construct the backend URL based on the current origin.
 const getAPIBase = () => {
-  if (hostname.includes('vercel.app')) {
-      return 'https://loan-dolphin-bycih01fn-2024adityayadav-2801.vercel.app/api';
-    }
+  // Explicit override, e.g. VITE_API_URL=https://my-api.example.com/api at build time.
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL.replace(/\/$/, '');
   }
   if (typeof window !== 'undefined' && window.location.hostname.includes('github.dev')) {
     // Codespaces: replace the port in the current URL with 5000
     return `${window.location.protocol}//${window.location.hostname.split('-').slice(0, -1).join('-')}-5000.${window.location.hostname.split('.').slice(1).join('.')}/api`;
+  }
+  // Production build: the backend serves this app, so the API is same-origin.
+  if (import.meta.env.PROD) {
+    return '/api';
   }
   // Local development: use localhost
   return 'http://localhost:5000/api';
 };
 
 const API_BASE = getAPIBase();
+
+// The socket.io server lives at the backend origin (same host/port as the API, without /api).
+export const SOCKET_URL = API_BASE.replace(/\/api$/, '');
 
 export async function apiRequest(endpoint, options = {}) {
   const response = await fetch(`${API_BASE}${endpoint}`, {

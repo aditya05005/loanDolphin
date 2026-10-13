@@ -12,6 +12,8 @@ import { useTheme } from "./context/ThemeContext";
 import CustomerDashboard from "./components/CustomerDashboard";
 import LoanApplicationForm from "./components/LoanApplicationForm";
 import ManagerDashboard from "./components/ManagerDashboard";
+import ToastContainer from "./components/ToastContainer";
+import { useLoanNotifications } from "./hooks/useLoanNotifications";
 
 const BRANCHES_STORAGE_KEY = "loanDolphinBranches";
 const CUSTOMERS_STORAGE_KEY = "loanDolphinCustomers";
@@ -55,6 +57,45 @@ export default function App() {
   const [currentView, setCurrentView] = useState("landing");
   const [customerView, setCustomerView] = useState("dashboard"); // "dashboard" or "apply"
   const [customerAccount, setCustomerAccount] = useState(null);
+  const [toasts, setToasts] = useState([]);
+
+  function dismissToast(id) {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }
+
+  function pushToast(message, tone = "info") {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    setToasts((prev) => [...prev, { id, message, tone }]);
+    setTimeout(() => dismissToast(id), 8000);
+  }
+
+  // Live loan status pushed by the server when a manager changes it.
+  useLoanNotifications(currentUser?.type === "customer", (event) => {
+    setLoans((prev) =>
+      prev.map((loan) => (loan.l_no === event.l_no ? { ...loan, ...event.loan } : loan))
+    );
+
+    const amount = `$${Number(event.amt || 0).toLocaleString()}`;
+    if (event.status === "Approved") {
+      pushToast(`Congratulations! Loan ${event.l_no} for ${amount} has been Approved!`, "success");
+    } else if (event.status === "Disbursed") {
+      pushToast(`Loan ${event.l_no} for ${amount} has been Disbursed to your account.`, "success");
+    } else if (event.status === "Rejected") {
+      pushToast(`Loan ${event.l_no} for ${amount} was Rejected.`, "error");
+    } else {
+      pushToast(`Loan ${event.l_no} is now ${event.status}.`, "info");
+    }
+
+    // Disbursement changes the account balance shown on the dashboard.
+    if (event.status === "Disbursed") {
+      apiRequest(`/accounts/user/${currentUser.userid}`)
+        .then((data) => {
+          const account = Array.isArray(data) ? data[0] : data;
+          if (account) setCustomerAccount(account);
+        })
+        .catch(() => {});
+    }
+  });
 
   async function addCustomerLoan(newLoan) {
     // The backend identifies the applicant from the authenticated cookie rather than a body field, so
@@ -212,6 +253,7 @@ export default function App() {
       return (
         <div className="min-h-screen bg-white dark:bg-slate-900">
           <Navbar />
+          <ToastContainer toasts={toasts} onDismiss={dismissToast} />
           <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
             <LoanApplicationForm
               branches={branches}
@@ -225,6 +267,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-white dark:bg-slate-900">
         <Navbar />
+        <ToastContainer toasts={toasts} onDismiss={dismissToast} />
         <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
           <CustomerDashboard
           loans={loans}
