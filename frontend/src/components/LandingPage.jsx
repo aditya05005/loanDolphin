@@ -149,7 +149,7 @@ export default function LandingPage({ onGetStarted }) {
                 Branch Network Directory
               </h3>
               <p className="mt-2 text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-                Oversee regional branch branches across cities, tracking branch assets, manager assignments, and operational status.
+                Oversee branches across cities, tracking lending budgets, manager assignments, and operational status.
               </p>
             </div>
 

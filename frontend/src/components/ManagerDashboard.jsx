@@ -1,7 +1,6 @@
 import React from "react";
 import ActiveLoansTable from "./ActiveLoansTable";
 import BranchCards from "./BranchCards";
-import LoanForm from "./LoanForm";
 import MetricsOverview from "./MetricsOverview";
 
 export default function ManagerDashboard({
@@ -13,8 +12,7 @@ export default function ManagerDashboard({
   managerBranch,
   updateLoanStatus,
   handleCreateBranch,
-  addLoan,
-  addCustomer
+  handleUpdateBranch
 }) {
   return (
     <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
@@ -30,8 +28,8 @@ export default function ManagerDashboard({
 
       <MetricsOverview loans={loans} branches={branches} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
+      <div className="grid grid-cols-1 gap-6">
+        <div className="space-y-6">
           <ActiveLoansTable
             loans={loans}
             customers={customers}
@@ -44,15 +42,7 @@ export default function ManagerDashboard({
             managers={managers}
             currentUser={currentUser}
             onCreateBranch={handleCreateBranch}
-          />
-        </div>
-        <div>
-          <LoanForm
-            branches={branches}
-            customers={customers}
-            loans={loans}
-            onAddLoan={addLoan}
-            onAddCustomer={addCustomer}
+            onUpdateBranch={handleUpdateBranch}
           />
         </div>
       </div>

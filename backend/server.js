@@ -205,11 +205,23 @@ const backfillLoanDefaults = async () => {
   );
 };
 
+const backfillBranchLendingBudgets = async () => {
+  await Branch.updateMany(
+    { lendingBudget: { $exists: false }, assets: { $exists: true } },
+    { $rename: { assets: 'lendingBudget' } }
+  );
+  await Branch.updateMany(
+    { lendingBudget: { $exists: false } },
+    { $set: { lendingBudget: 0 } }
+  );
+};
+
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/loanDolphin')
   .then(async () => {
     console.log('MongoDB Connected');
     await seedDefaultUsers();
     await backfillLoanDefaults();
+    await backfillBranchLendingBudgets();
   })
   .catch((err) => console.error(err));
 
@@ -312,16 +324,36 @@ app.get('/api/branches', asyncHandler(async (req, res) => {
   }
 }));
 
+app.put('/api/branches/:b_name', asyncHandler(async (req, res) => {
+  const requestingUser = await getRequestingUser(req);
+  if (!requestingUser || requestingUser.type !== 'administrator') {
+    return res.status(requestingUser ? 403 : 401).json({ message: 'Only administrators can update branch details.' });
+  }
+
+  const { b_city, lendingBudget } = req.body || {};
+  if (!isNonEmptyString(b_city) || !isNonNegativeFiniteNumber(lendingBudget)) {
+    return res.status(400).json({ message: 'A branch city and non-negative lending budget are required.' });
+  }
+
+  const branch = await Branch.findOneAndUpdate(
+    { b_name: req.params.b_name },
+    { $set: { b_city: b_city.trim(), lendingBudget } },
+    { new: true, runValidators: true }
+  );
+  if (!branch) return res.status(404).json({ message: 'Branch not found.' });
+  res.json(branch);
+}));
+
 app.post('/api/branches', asyncHandler(async (req, res) => {
-  const { b_name, b_city, assets, managerUserid, managerPassword } = req.body || {};
+  const { b_name, b_city, lendingBudget, managerUserid, managerPassword } = req.body || {};
 
   if (!isNonEmptyString(b_name) || !isNonEmptyString(b_city) ||
       !isNonEmptyString(managerUserid) || !isNonEmptyString(managerPassword)) {
     return res.status(400).json({ message: 'Branch details and manager credentials are required.' });
   }
 
-  if (assets !== undefined && !isNonNegativeFiniteNumber(assets)) {
-    return res.status(400).json({ message: 'Assets, if provided, must be a non-negative number.' });
+  if (lendingBudget !== undefined && !isNonNegativeFiniteNumber(lendingBudget)) {
+    return res.status(400).json({ message: 'Lending budget, if provided, must be a non-negative number.' });
   }
 
   const requestingUser = await getRequestingUser(req);
@@ -348,7 +380,7 @@ app.post('/api/branches', asyncHandler(async (req, res) => {
     const newBranch = await Branch.create({
       b_name: cleanName,
       b_city: cleanCity,
-      assets: isNonNegativeFiniteNumber(assets) ? assets : 0
+      lendingBudget: isNonNegativeFiniteNumber(lendingBudget) ? lendingBudget : 0
     });
     const newUser = await User.create({ userid: cleanUserId, password: cleanPassword, type: 'branch_manager' });
     const newManager = await Manager.create({ userid: newUser.userid, b_name: newBranch.b_name });
@@ -537,7 +569,20 @@ app.post('/api/customer/loans', strictLimiter, asyncHandler(async (req, res) => 
     return res.status(400).json({ message: 'No customer record is linked to this user.' });
   }
 
+  const pendingLoan = await Loan.exists({ customerUserId: requestingUser.userid, status: 'Pending' });
+  if (pendingLoan) {
+    return res.status(409).json({ message: 'You already have a loan application awaiting a decision.' });
+  }
+
   try {
+    // Ensure every applicant has an account tied to the branch they selected.
+    // Older customer records may not have had an account created at registration.
+    await Account.findOneAndUpdate(
+      { userid: requestingUser.userid, b_name: branch.b_name },
+      { $setOnInsert: { ac_no: crypto.randomUUID(), balance: 0 } },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
     const loan = await Loan.create({
       l_no: crypto.randomUUID(),
       amt,
@@ -605,27 +650,55 @@ app.put('/api/loans/:id/status', asyncHandler(async (req, res) => {
     return res.status(409).json({ message: `Cannot change loan status from ${loan.status} to ${status}.` });
   }
 
+  const previousStatus = loan.status;
   try {
     if (status === 'Disbursed' && loan.status !== 'Disbursed') {
-      // Find the customer's account to deposit the loan amount
-      // We will look for an account linked to the customer's userid
-      const customerUserId = loan.customerUserId;
-      let account = await Account.findOne({ userid: customerUserId });
-      if (!account) {
-        return res.status(400).json({ message: 'Cannot disburse: Customer has no account.' });
-      }
-      
-      // Deposit loan amount to account
-      await Account.findOneAndUpdate(
-        { ac_no: account.ac_no },
-        { $inc: { balance: loan.amt } }
+      // Claim this transition atomically so two staff requests cannot credit
+      // the same loan twice.
+      const claimedLoan = await Loan.findOneAndUpdate(
+        { _id: loan._id, status: 'Approved' },
+        { $set: { status: 'Disbursed' } },
+        { new: true }
       );
+      if (!claimedLoan) {
+        return res.status(409).json({ message: 'Loan status changed before disbursement. Refresh and try again.' });
+      }
+
+      const budgetBranch = await Branch.findOneAndUpdate(
+        { b_name: loan.b_name, lendingBudget: { $gte: loan.amt } },
+        { $inc: { lendingBudget: -loan.amt } },
+        { new: true }
+      );
+      if (!budgetBranch) {
+        await Loan.updateOne({ _id: loan._id, status: 'Disbursed' }, { $set: { status: 'Approved' } });
+        return res.status(409).json({ message: 'The branch has insufficient available lending budget for this loan.' });
+      }
+
+      // Older loans may predate automatic account setup, so ensure the
+      // customer has a branch account before crediting the disbursement.
+      const customerUserId = loan.customerUserId;
+      if (!customerUserId) {
+        await Branch.updateOne({ b_name: loan.b_name }, { $inc: { lendingBudget: loan.amt } });
+        await Loan.updateOne({ _id: loan._id, status: 'Disbursed' }, { $set: { status: 'Approved' } });
+        return res.status(400).json({ message: 'Cannot disburse: Loan is not linked to a customer login.' });
+      }
+      try {
+        await Account.findOneAndUpdate(
+          { userid: customerUserId, b_name: loan.b_name },
+          { $setOnInsert: { ac_no: crypto.randomUUID() }, $inc: { balance: loan.amt } },
+          { upsert: true, new: true }
+        );
+      } catch (accountError) {
+        await Branch.updateOne({ b_name: loan.b_name }, { $inc: { lendingBudget: loan.amt } });
+        await Loan.updateOne({ _id: loan._id, status: 'Disbursed' }, { $set: { status: 'Approved' } });
+        throw accountError;
+      }
+      loan.status = 'Disbursed';
+    } else {
+      loan.status = status;
+      await loan.save();
     }
     
-    const previousStatus = loan.status;
-    loan.status = status;
-    await loan.save();
-
     // Tell the borrower right away. A failed push must never fail the request.
     if (loan.customerUserId && previousStatus !== status) {
       try {

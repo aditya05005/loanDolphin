@@ -1,7 +1,7 @@
 // BranchCards.jsx
 import { useState } from "react";
 
-function formatAssets(amount) {
+function formatCurrency(amount) {
   return `$${Number(amount || 0).toLocaleString()}`;
 }
 
@@ -9,9 +9,14 @@ export default function BranchCards({
   branches = [],
   managers = [],
   currentUser = null,
-  onCreateBranch = null
+  onCreateBranch = null,
+  onUpdateBranch = null
 }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [branchToEdit, setBranchToEdit] = useState(null);
+  const [editData, setEditData] = useState({ b_city: "", lendingBudget: "" });
+  const [editError, setEditError] = useState("");
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [permissionError, setPermissionError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
@@ -19,7 +24,7 @@ export default function BranchCards({
   const [formData, setFormData] = useState({
     b_name: "",
     b_city: "",
-    assets: "",
+    lendingBudget: "",
     managerUserid: "",
     managerPassword: ""
   });
@@ -41,7 +46,7 @@ export default function BranchCards({
     setFormData({
       b_name: "",
       b_city: "",
-      assets: "",
+      lendingBudget: "",
       managerUserid: "",
       managerPassword: ""
     });
@@ -52,6 +57,40 @@ export default function BranchCards({
     setIsModalOpen(false);
     setFormError("");
     setFormSuccess("");
+  }
+
+  function openEditBranch(branch) {
+    if (!isAdmin) return;
+    setEditData({ b_city: branch.b_city || "", lendingBudget: String(branch.lendingBudget ?? 0) });
+    setEditError("");
+    setBranchToEdit(branch);
+  }
+
+  async function handleEditSubmit(e) {
+    e.preventDefault();
+    const lendingBudget = Number(editData.lendingBudget);
+    if (!editData.b_city.trim() || !Number.isFinite(lendingBudget) || lendingBudget < 0) {
+      setEditError("Enter a branch city and a non-negative lending budget.");
+      return;
+    }
+
+    setIsSavingEdit(true);
+    setEditError("");
+    try {
+      const result = await onUpdateBranch?.(branchToEdit.b_name, {
+        b_city: editData.b_city.trim(),
+        lendingBudget
+      });
+      if (!result?.ok) {
+        setEditError(result?.message || "Branch update failed.");
+        return;
+      }
+      setBranchToEdit(null);
+    } catch (error) {
+      setEditError(error.message || "Branch update failed.");
+    } finally {
+      setIsSavingEdit(false);
+    }
   }
 
   function handleInputChange(e) {
@@ -73,7 +112,7 @@ export default function BranchCards({
     const trimmedBranchCity = formData.b_city.trim();
     const trimmedManagerId = formData.managerUserid.trim();
     const trimmedPassword = formData.managerPassword.trim();
-    const assetsNumber = Number(formData.assets);
+    const lendingBudgetNumber = Number(formData.lendingBudget);
 
     if (!trimmedBranchName) {
       setFormError("Branch name is required.");
@@ -83,8 +122,8 @@ export default function BranchCards({
       setFormError("Branch city is required.");
       return;
     }
-    if (isNaN(assetsNumber) || assetsNumber < 0) {
-      setFormError("Total assets must be a valid non-negative number.");
+    if (isNaN(lendingBudgetNumber) || lendingBudgetNumber < 0) {
+      setFormError("Lending budget must be a valid non-negative number.");
       return;
     }
     if (!trimmedManagerId) {
@@ -105,7 +144,7 @@ export default function BranchCards({
         const result = await onCreateBranch({
           b_name: trimmedBranchName,
           b_city: trimmedBranchCity,
-          assets: assetsNumber,
+          lendingBudget: lendingBudgetNumber,
           managerUserid: trimmedManagerId,
           managerPassword: trimmedPassword
         });
@@ -120,7 +159,7 @@ export default function BranchCards({
         setFormData({
           b_name: "",
           b_city: "",
-          assets: "",
+          lendingBudget: "",
           managerUserid: "",
           managerPassword: ""
         });
@@ -204,7 +243,17 @@ export default function BranchCards({
           return (
             <div
               key={b.b_name}
-              className="bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60 rounded-xl p-4 transition-all hover:border-slate-300 dark:hover:border-slate-600 shadow-sm"
+              onClick={() => openEditBranch(b)}
+              onKeyDown={(event) => {
+                if (isAdmin && (event.key === "Enter" || event.key === " ")) {
+                  event.preventDefault();
+                  openEditBranch(b);
+                }
+              }}
+              role={isAdmin ? "button" : undefined}
+              tabIndex={isAdmin ? 0 : undefined}
+              title={isAdmin ? "Click to edit branch details" : undefined}
+              className={`bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60 rounded-xl p-4 transition-all hover:border-slate-300 dark:hover:border-slate-600 shadow-sm ${isAdmin ? "cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500" : ""}`}
             >
               <div className="flex items-start justify-between gap-2 mb-2">
                 <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm">{b.b_name}</h3>
@@ -216,7 +265,7 @@ export default function BranchCards({
                 City: <span className="text-slate-700 dark:text-slate-200 font-medium">{b.b_city}</span>
               </p>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                Assets: <span className="text-emerald-600 dark:text-emerald-400 font-medium">{formatAssets(b.assets)}</span>
+            Available Lending Budget: <span className="text-emerald-600 dark:text-emerald-400 font-medium">{formatCurrency(b.lendingBudget)}</span>
               </p>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1">
                 Manager:{" "}
@@ -228,6 +277,47 @@ export default function BranchCards({
           );
         })}
       </div>
+
+      {branchToEdit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+          <form onSubmit={handleEditSubmit} className="w-full max-w-md space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-800">
+            <div>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Edit Branch</h3>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{branchToEdit.b_name}</p>
+            </div>
+            {editError && <p className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{editError}</p>}
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+              City
+              <input
+                value={editData.b_city}
+                onChange={(event) => setEditData((prev) => ({ ...prev, b_city: event.target.value }))}
+                disabled={isSavingEdit}
+                required
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+              />
+            </label>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+              Available Lending Budget ($)
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={editData.lendingBudget}
+                onChange={(event) => setEditData((prev) => ({ ...prev, lendingBudget: event.target.value }))}
+                disabled={isSavingEdit}
+                required
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+              />
+            </label>
+            <p className="-mt-2 text-xs text-slate-500 dark:text-slate-400">This amount decreases when a loan is disbursed. Increase it here to add budget.</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Branch name stays fixed so existing loans and accounts remain connected.</p>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setBranchToEdit(null)} disabled={isSavingEdit} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 dark:border-slate-600 dark:text-slate-200">Cancel</button>
+              <button type="submit" disabled={isSavingEdit} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{isSavingEdit ? "Saving…" : "Save Changes"}</button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* Add Branch & Manager Modal */}
       {isModalOpen && (
@@ -316,14 +406,14 @@ export default function BranchCards({
 
                   <div>
                     <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                      Initial Assets ($) <span className="text-rose-500">*</span>
+                      Initial Lending Budget ($) <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="number"
-                      name="assets"
+                      name="lendingBudget"
                       min="0"
                       step="0.01"
-                      value={formData.assets}
+                      value={formData.lendingBudget}
                       onChange={handleInputChange}
                       placeholder="0.00"
                       required

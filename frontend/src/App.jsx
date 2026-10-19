@@ -1,9 +1,5 @@
 import { useState, useEffect } from "react";
 import Navbar from "./components/Navbar";
-import MetricsOverview from "./components/MetricsOverview";
-import ActiveLoansTable from "./components/ActiveLoansTable";
-import BranchCards from "./components/BranchCards";
-import LoanForm from "./components/LoanForm";
 import LandingPage from "./components/LandingPage";
 import LoginScreen from "./components/LoginScreen";
 import { apiRequest } from "./services/api";
@@ -56,7 +52,7 @@ export default function App() {
   const [managers, setManagers] = useState(getManagers);
   const [currentView, setCurrentView] = useState("landing");
   const [customerView, setCustomerView] = useState("dashboard"); // "dashboard" or "apply"
-  const [customerAccount, setCustomerAccount] = useState(null);
+  const [customerAccounts, setCustomerAccounts] = useState([]);
   const [toasts, setToasts] = useState([]);
 
   function dismissToast(id) {
@@ -90,8 +86,8 @@ export default function App() {
     if (event.status === "Disbursed") {
       apiRequest(`/accounts/user/${currentUser.userid}`)
         .then((data) => {
-          const account = Array.isArray(data) ? data[0] : data;
-          if (account) setCustomerAccount(account);
+          const accounts = Array.isArray(data) ? data : data ? [data] : [];
+          if (accounts.length) setCustomerAccounts(accounts);
         })
         .catch(() => {});
     }
@@ -111,7 +107,7 @@ export default function App() {
   useEffect(() => {
     if (!currentUser) {
       setCurrentView("landing");
-      setCustomerAccount(null);
+      setCustomerAccounts([]);
     }
   }, [currentUser]);
 
@@ -206,6 +202,25 @@ export default function App() {
     }
   }
 
+  async function handleUpdateBranch(branchName, branchDetails) {
+    if (currentUser?.type !== "administrator") {
+      return { ok: false, message: "Only administrators can update branch details." };
+    }
+
+    try {
+      const updatedBranch = await apiRequest(`/branches/${encodeURIComponent(branchName)}`, {
+        method: "PUT",
+        body: JSON.stringify(branchDetails)
+      });
+      setBranches((prev) => prev.map((branch) =>
+        branch.b_name === updatedBranch.b_name ? updatedBranch : branch
+      ));
+      return { ok: true, message: "Branch details updated." };
+    } catch (error) {
+      return { ok: false, message: error.message || "Branch update failed." };
+    }
+  }
+
   useEffect(() => {
     if (!currentUser) return;
 
@@ -220,9 +235,7 @@ export default function App() {
           if (branchData) setBranches(branchData);
           if (loanData) setLoans(loanData);
           if (accountData) {
-             // API might return array or single account
-             const account = Array.isArray(accountData) ? accountData[0] : accountData;
-             setCustomerAccount(account);
+            setCustomerAccounts(Array.isArray(accountData) ? accountData : [accountData]);
           }
         } else {
           const [branchData, customerData, loanData, managerData] = await Promise.all([
@@ -272,8 +285,9 @@ export default function App() {
           <CustomerDashboard
           loans={loans}
             onApply={() => setCustomerView("apply")}
-            balance={customerAccount?.balance || 0}
-            branchName={customerAccount?.b_name || "-"}
+            balance={customerAccounts.reduce((total, account) => total + Number(account.balance || 0), 0)}
+            branchName={customerAccounts.length === 1 ? customerAccounts[0].b_name : customerAccounts.length > 1 ? "Multiple branches" : "-"}
+            hasPendingLoan={loans.some((loan) => loan.status === "Pending")}
           />
         </main>
       </div>
@@ -324,8 +338,7 @@ export default function App() {
         managerBranch={managerBranch}
         updateLoanStatus={updateLoanStatus}
         handleCreateBranch={handleCreateBranch}
-        addLoan={addLoan}
-        addCustomer={addCustomer}
+        handleUpdateBranch={handleUpdateBranch}
       />
     </div>
   );
@@ -335,7 +348,7 @@ function BranchSetupForm({ onCreateBranch, onBackToLogin }) {
   const [form, setForm] = useState({
     b_name: "",
     b_city: "",
-    assets: "0",
+    lendingBudget: "0",
     managerUserid: "",
     managerPassword: ""
   });
@@ -354,7 +367,7 @@ function BranchSetupForm({ onCreateBranch, onBackToLogin }) {
       setFeedback(result.message);
       return;
     }
-    setForm({ b_name: "", b_city: "", assets: "0", managerUserid: "", managerPassword: "" });
+    setForm({ b_name: "", b_city: "", lendingBudget: "0", managerUserid: "", managerPassword: "" });
     setFeedback("Branch created successfully.");
   }
 
@@ -369,8 +382,8 @@ function BranchSetupForm({ onCreateBranch, onBackToLogin }) {
         <input name="b_city" value={form.b_city} onChange={handleChange} className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2.5 text-slate-900 dark:border-slate-600 dark:bg-slate-700 dark:text-white" required />
       </div>
       <div>
-        <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">Assets</label>
-        <input type="number" name="assets" min="0" step="0.01" value={form.assets} onChange={handleChange} className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2.5 text-slate-900 dark:border-slate-600 dark:bg-slate-700 dark:text-white" required />
+        <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">Lending Budget ($)</label>
+        <input type="number" name="lendingBudget" min="0" step="0.01" value={form.lendingBudget} onChange={handleChange} className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2.5 text-slate-900 dark:border-slate-600 dark:bg-slate-700 dark:text-white" required />
       </div>
       <div>
         <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">Manager User ID</label>

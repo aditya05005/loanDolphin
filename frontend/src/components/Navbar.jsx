@@ -20,17 +20,7 @@ export default function Navbar() {
         <span className="text-slate-900 dark:text-white font-semibold text-lg">LoanDolphin</span>
       </div>
 
-      <div className="flex items-center gap-6">
-        <a href="#" className="text-sm text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition">
-          Dashboard
-        </a>
-        <a href="#" className="text-sm text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition">
-          Loans
-        </a>
-        <a href="#" className="text-sm text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition">
-          Branches
-        </a>
-
+      <div className="flex items-center gap-4">
         <button
           type="button"
           onClick={toggleTheme}

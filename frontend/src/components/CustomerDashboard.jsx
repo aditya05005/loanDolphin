@@ -13,7 +13,7 @@ const BADGE = {
  *   loans: Array of loan objects belonging to the current user.
  *   onApply: Callback to switch to the loan‑application view.
  */
-export default function CustomerDashboard({ loans, onApply, balance = 0, branchName = "-" }) {
+export default function CustomerDashboard({ loans, onApply, balance = 0, branchName = "-", hasPendingLoan = false }) {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -23,7 +23,7 @@ export default function CustomerDashboard({ loans, onApply, balance = 0, branchN
         <div className="flex items-center gap-4">
           <div className="flex gap-4 p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm">
             <div className="flex flex-col">
-              <span className="text-xs text-slate-500 dark:text-slate-400">Account Balance</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">Wallet Balance</span>
               <span className="font-semibold text-slate-800 dark:text-slate-200">${balance}</span>
             </div>
             <div className="w-px bg-slate-200 dark:bg-slate-700"></div>
@@ -35,9 +35,11 @@ export default function CustomerDashboard({ loans, onApply, balance = 0, branchN
           <button
             type="button"
             onClick={onApply}
-            className="inline-flex items-center gap-1.5 rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-500 whitespace-nowrap"
+            disabled={hasPendingLoan}
+            title={hasPendingLoan ? "You already have an application awaiting a decision." : undefined}
+            className="inline-flex items-center gap-1.5 rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60 whitespace-nowrap"
           >
-            Apply for Loan
+            {hasPendingLoan ? "Application Pending" : "Apply for Loan"}
           </button>
         </div>
       </div>
@@ -45,7 +47,7 @@ export default function CustomerDashboard({ loans, onApply, balance = 0, branchN
       {loans.length === 0 ? (
         <div className="p-4 bg-amber-50 dark:bg-amber-950/30 rounded">
           <p className="text-slate-700 dark:text-slate-300">
-            No loans found. Click "Apply for Loan" to get started.
+            No loans found. Apply for a loan to get started.
           </p>
         </div>
       ) : (
