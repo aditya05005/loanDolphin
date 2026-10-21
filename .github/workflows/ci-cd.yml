@@ -46,10 +46,12 @@ jobs:
         run: |
           nohup node server.js > ../api.log 2>&1 &
           for i in $(seq 1 30); do
-            curl -fs http://localhost:5000/api/health && exit 0
+            if curl -fsS http://localhost:5000/api/health | grep -q '"database":"connected"'; then
+              echo "API and MongoDB are ready"; exit 0
+            fi
             sleep 1
           done
-          echo "API did not become healthy"; cat ../api.log; exit 1
+          echo "API and MongoDB did not become ready"; cat ../api.log; exit 1
         working-directory: backend
       - name: Run Postman collection (newman)
         run: >

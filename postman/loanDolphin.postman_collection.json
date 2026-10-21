@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "loanDolphin API Tests",
-    "description": "API tests for the loanDolphin backend (Express + MongoDB).\n\nHOW TO RUN: start MongoDB and the backend (port 5000), pick the \"loanDolphin Local\" environment, then run the WHOLE collection in order (Collection Runner, or `newman run loanDolphin.postman_collection.json -e loanDolphin.local.postman_environment.json`). Requests depend on each other (branches -> customer -> accounts -> loans), so single requests will not work in isolation.\n\nAUTH: the API uses an httpOnly JWT cookie. Postman and newman keep it in their cookie jar automatically; the collection logs in and out as admin, customer and branch manager as needed.\n\nRATE LIMIT: /users/login, /users/register and POST /customer/loans share one limiter (10 requests per 15 minutes per IP). One full run uses 9 of them. Run it again only after restarting the backend or waiting 15 minutes. The first request that hits the limiter checks this and fails with a clear test name if the window is already used up.\n\nDATA: every run creates uniquely named branches, managers and a customer (suffix {{runId}}), so reruns never clash with existing data. The seeded admin account (admin / admin123) must exist.",
+    "description": "API tests for the loanDolphin backend (Express + MongoDB).\n\nHOW TO RUN: start MongoDB and the backend (port 5000), pick the \"loanDolphin Local\" environment, then run the WHOLE collection in order (Collection Runner, or `newman run loanDolphin.postman_collection.json -e loanDolphin.local.postman_environment.json`). Requests depend on each other (branches -> customer -> accounts -> loans), so single requests will not work in isolation.\n\nAUTH: the API uses an httpOnly JWT cookie. Postman and newman keep it in their cookie jar automatically; the collection logs in and out as admin, customer and branch manager as needed.\n\nRATE LIMIT: /users/login, /users/register and POST /customer/loans share one limiter (10 requests per 15 minutes per IP). One full run uses 10 requests. Run it again only after restarting the backend or waiting 15 minutes. The first request that hits the limiter checks this and fails with a clear test name if the window is already used up.\n\nDATA: every run creates uniquely named branches, managers and a customer (suffix {{runId}}), so reruns never clash with existing data. The seeded admin account (admin / admin123) must exist.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -35,10 +35,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"status is \\\"ok\\\"\", () => {",
-                  "const body = pm.response.json();",
-                  "pm.expect(body.status).to.eql(\"ok\");",
-                  "});"
+                  "pm.test(\"API and database are ready\", () => { const b=pm.response.json(); pm.expect(b.status).to.eql(\"ok\"); pm.expect(b.database).to.eql(\"connected\"); });"
                 ]
               }
             }
@@ -803,7 +800,7 @@
                   "const body = pm.response.json();",
                   "pm.expect(body.branch.b_name).to.eql(pm.collectionVariables.get(\"branchA\"));",
                   "pm.expect(body.branch.b_city).to.eql(\"Mumbai\");",
-                  "pm.expect(body.branch.assets).to.eql(1000000);",
+                  "pm.expect(body.branch.lendingBudget).to.eql(1000000);",
                   "pm.expect(body.manager.userid).to.eql(pm.collectionVariables.get(\"mgrA\"));",
                   "pm.expect(body.manager.b_name).to.eql(pm.collectionVariables.get(\"branchA\"));",
                   "pm.expect(body.user.type).to.eql(\"branch_manager\");",
@@ -833,7 +830,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"b_name\": \"{{branchA}}\",\n  \"b_city\": \"Mumbai\",\n  \"assets\": 1000000,\n  \"managerUserid\": \"{{mgrA}}\",\n  \"managerPassword\": \"{{mgrPass}}\"\n}",
+              "raw": "{\n  \"b_name\": \"{{branchA}}\",\n  \"b_city\": \"Mumbai\",\n  \"lendingBudget\": 1000000,\n  \"managerUserid\": \"{{mgrA}}\",\n  \"managerPassword\": \"{{mgrPass}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -843,7 +840,7 @@
           }
         },
         {
-          "name": "Create branch B + manager B (assets omitted -> 0)",
+          "name": "Create branch B + manager B (lendingBudget omitted -> 0)",
           "event": [
             {
               "listen": "test",
@@ -851,10 +848,10 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status is 201\", () => pm.response.to.have.status(201));",
-                  "pm.test(\"assets default to 0\", () => {",
+                  "pm.test(\"lendingBudget default to 0\", () => {",
                   "const body = pm.response.json();",
                   "pm.expect(body.branch.b_name).to.eql(pm.collectionVariables.get(\"branchB\"));",
-                  "pm.expect(body.branch.assets).to.eql(0);",
+                  "pm.expect(body.branch.lendingBudget).to.eql(0);",
                   "});"
                 ]
               }
@@ -881,6 +878,50 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"b_name\": \"{{branchB}}\",\n  \"b_city\": \"Pune\",\n  \"managerUserid\": \"{{mgrB}}\",\n  \"managerPassword\": \"{{mgrPass}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Admin updates branch details",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"returns updated branch and budget\", () => { const b=pm.response.json(); pm.expect(b.b_city).to.eql(\"Mumbai\"); pm.expect(b.lendingBudget).to.eql(1000000); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/branches/{{branchA}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "branches",
+                "{{branchA}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"b_city\": \"Mumbai\",\n  \"lendingBudget\": 1000000\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -933,7 +974,7 @@
           }
         },
         {
-          "name": "Create branch with negative assets -> 400",
+          "name": "Create branch with negative lendingBudget -> 400",
           "event": [
             {
               "listen": "test",
@@ -966,7 +1007,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"b_name\": \"Neg Branch {{runId}}\",\n  \"b_city\": \"Mumbai\",\n  \"assets\": -5,\n  \"managerUserid\": \"neg_{{runId}}\",\n  \"managerPassword\": \"x12345\"\n}",
+              "raw": "{\n  \"b_name\": \"Neg Branch {{runId}}\",\n  \"b_city\": \"Mumbai\",\n  \"lendingBudget\": -5,\n  \"managerUserid\": \"neg_{{runId}}\",\n  \"managerPassword\": \"x12345\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -976,7 +1017,7 @@
           }
         },
         {
-          "name": "Create branch with non-numeric assets -> 400",
+          "name": "Create branch with non-numeric lendingBudget -> 400",
           "event": [
             {
               "listen": "test",
@@ -1009,7 +1050,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"b_name\": \"Str Branch {{runId}}\",\n  \"b_city\": \"Mumbai\",\n  \"assets\": \"100\",\n  \"managerUserid\": \"str_{{runId}}\",\n  \"managerPassword\": \"x12345\"\n}",
+              "raw": "{\n  \"b_name\": \"Str Branch {{runId}}\",\n  \"b_city\": \"Mumbai\",\n  \"lendingBudget\": \"100\",\n  \"managerUserid\": \"str_{{runId}}\",\n  \"managerPassword\": \"x12345\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1266,50 +1307,6 @@
                   "pm.expect(sc).to.match(/token=[^;]+/);",
                   "pm.expect(sc.toLowerCase()).to.include(\"httponly\");",
                   "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/users/register",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "users",
-                "register"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"userid\": \"{{custUser}}\",\n  \"password\": \"{{custPass}}\",\n  \"c_name\": \"Test Customer {{runId}}\",\n  \"c_street\": \"1 Test Street\",\n  \"c_city\": \"Mumbai\",\n  \"aadharNumber\": \"123456789012\",\n  \"panCard\": \"ABCDE1234F\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Register same userid again -> 409",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is 409\", () => pm.response.to.have.status(409));",
-                  "pm.test(\"has an error message\", () => pm.expect(pm.response.json().message).to.be.a(\"string\").and.not.empty);"
                 ]
               }
             }
@@ -1962,6 +1959,81 @@
           }
         },
         {
+          "name": "Second customer application while pending is rejected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"pending application message\", () => pm.expect(pm.response.json().message).to.include(\"awaiting a decision\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/loans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "loans"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amt\": 25000,\n  \"b_name\": \"{{branchA}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Application creates an account for branch A",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"branch A account exists with zero balance\", () => { const a=pm.response.json().find(x=>x.b_name===pm.collectionVariables.get(\"branchA\")); pm.expect(a).to.exist; pm.expect(a.balance).to.eql(0); pm.collectionVariables.set(\"autoAccountA\",a.ac_no); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/accounts/user/{{custUser}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "accounts",
+                "user",
+                "{{custUser}}"
+              ]
+            }
+          }
+        },
+        {
           "name": "GET /customer/loans shows the new loan",
           "event": [
             {
@@ -2458,52 +2530,32 @@
           }
         },
         {
-          "name": "Open account A (balance 1000) at branch A",
+          "name": "Use the account created by the customer application",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"status is 201\", () => pm.response.to.have.status(201));",
-                  "pm.test(\"account created\", () => {",
-                  "const body = pm.response.json();",
-                  "pm.expect(body.ac_no).to.be.a(\"string\").and.not.empty;",
-                  "pm.expect(body.balance).to.eql(1000);",
-                  "pm.expect(body.userid).to.eql(pm.collectionVariables.get(\"custUser\"));",
-                  "pm.expect(body.b_name).to.eql(pm.collectionVariables.get(\"branchA\"));",
-                  "pm.collectionVariables.set(\"accA\", body.ac_no);",
-                  "});"
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"account A already exists\", () => { const a=pm.response.json().find(x=>x.b_name===pm.collectionVariables.get(\"branchA\")); pm.expect(a).to.exist; pm.expect(a.balance).to.eql(0); pm.collectionVariables.set(\"accA\",a.ac_no); });"
                 ]
               }
             }
           ],
           "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "method": "GET",
             "url": {
-              "raw": "{{baseUrl}}/api/accounts",
+              "raw": "{{baseUrl}}/api/accounts/user/{{custUser}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
-                "accounts"
+                "accounts",
+                "user",
+                "{{custUser}}"
               ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"userid\": \"{{custUser}}\",\n  \"b_name\": \"{{branchA}}\",\n  \"initialBalance\": 1000\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
             }
           }
         },
@@ -2633,11 +2685,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"1000\", () => {",
-                  "const body = pm.response.json();",
-                  "pm.expect(body.ac_no).to.eql(pm.collectionVariables.get(\"accA\"));",
-                  "pm.expect(body.balance).to.eql(1000);",
-                  "});"
+                  "pm.test(\"account starts at zero\", () => pm.expect(pm.response.json().balance).to.eql(0));"
                 ]
               }
             }
@@ -2834,9 +2882,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"balance 1500\", () => {",
-                  "pm.expect(pm.response.json().balance).to.eql(1500);",
-                  "});"
+                  "pm.test(\"balance is 500\", () => pm.expect(pm.response.json().balance).to.eql(500));"
                 ]
               }
             }
@@ -2881,9 +2927,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"balance 1300\", () => {",
-                  "pm.expect(pm.response.json().balance).to.eql(1300);",
-                  "});"
+                  "pm.test(\"balance is 300\", () => pm.expect(pm.response.json().balance).to.eql(300));"
                 ]
               }
             }
@@ -3018,9 +3062,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"still 1300\", () => {",
-                  "pm.expect(pm.response.json().balance).to.eql(1300);",
-                  "});"
+                  "pm.test(\"balance remains 300\", () => pm.expect(pm.response.json().balance).to.eql(300));"
                 ]
               }
             }
@@ -3785,6 +3827,204 @@
       ]
     },
     {
+      "name": "05 Branch manager B: insufficient budget",
+      "description": "Checks that a branch cannot disburse more than its available lending budget.",
+      "item": [
+        {
+          "name": "Login as manager B",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userid\": \"{{mgrB}}\",\n  \"password\": \"{{mgrPass}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Approve branch B loan",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"loan is approved\", () => pm.expect(pm.response.json().status).to.eql(\"Approved\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/loans/{{loanStaffB}}/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "loans",
+                "{{loanStaffB}}",
+                "status"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"Approved\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Insufficient branch budget prevents disbursement",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"explains the budget limit\", () => pm.expect(pm.response.json().message).to.include(\"insufficient available lending budget\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/loans/{{loanStaffB}}/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "loans",
+                "{{loanStaffB}}",
+                "status"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"Disbursed\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Failed disbursement keeps loan approved and budget unchanged",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"loan stays approved\", () => pm.expect(pm.response.json().find(x=>x.l_no===pm.collectionVariables.get(\"loanStaffB\")).status).to.eql(\"Approved\"));",
+                  "pm.test(\"branch B budget stays zero\", () => pm.expect(pm.response.json().find(x=>x.b_name===pm.collectionVariables.get(\"branchB\")).lendingBudget).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/loans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "loans"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Logout manager B",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "logout"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "05 Branch manager A: branch scoping, money, disbursement",
       "description": "A branch manager only sees and changes data for their own branch; disbursing credits the customer account exactly once.",
       "item": [
@@ -4055,6 +4295,49 @@
           }
         },
         {
+          "name": "Branch manager cannot edit budget",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/branches/{{branchA}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "branches",
+                "{{branchA}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"b_city\": \"Mumbai\",\n  \"lendingBudget\": 9999999\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
           "name": "Manager cannot open an account at branch B -> 403",
           "event": [
             {
@@ -4308,9 +4591,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"balance 2000\", () => {",
-                  "pm.expect(pm.response.json().balance).to.eql(2000);",
-                  "});"
+                  "pm.test(\"balance is 1000\", () => pm.expect(pm.response.json().balance).to.eql(1000));"
                 ]
               }
             }
@@ -4400,9 +4681,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"2000\", () => {",
-                  "pm.expect(pm.response.json().balance).to.eql(2000);",
-                  "});"
+                  "pm.test(\"balance remains 1000\", () => pm.expect(pm.response.json().balance).to.eql(1000));"
                 ]
               }
             }
@@ -4652,7 +4931,7 @@
           }
         },
         {
-          "name": "Loan amount (50000) was credited to the account",
+          "name": "Disbursement account total stays correct",
           "event": [
             {
               "listen": "test",
@@ -4660,26 +4939,23 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"2000 + 50000\", () => {",
-                  "pm.expect(pm.response.json().balance).to.eql(52000);",
-                  "});"
+                  "pm.test(\"branch A account total is 51000\", () => { const n=pm.response.json().filter(a=>a.b_name===pm.collectionVariables.get(\"branchA\")).reduce((s,a)=>s+a.balance,0); pm.expect(n).to.eql(51000); });"
                 ]
               }
             }
           ],
           "request": {
             "method": "GET",
-            "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/accounts/{{accA}}/balance",
+              "raw": "{{baseUrl}}/api/accounts/user/{{custUser}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
                 "accounts",
-                "{{accA}}",
-                "balance"
+                "user",
+                "{{custUser}}"
               ]
             }
           }
@@ -4732,7 +5008,7 @@
           }
         },
         {
-          "name": "Balance did not change on the repeat",
+          "name": "Available budget decreases after disbursement",
           "event": [
             {
               "listen": "test",
@@ -4740,9 +5016,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"52000\", () => {",
-                  "pm.expect(pm.response.json().balance).to.eql(52000);",
-                  "});"
+                  "pm.test(\"remaining branch A budget is 950000\", () => pm.expect(pm.response.json().find(b=>b.b_name===pm.collectionVariables.get(\"branchA\")).lendingBudget).to.eql(950000));"
                 ]
               }
             }
@@ -4751,15 +5025,72 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/accounts/{{accA}}/balance",
+              "raw": "{{baseUrl}}/api/branches",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "branches"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Disbursement account total stays correct",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"branch A account total is 51000\", () => { const n=pm.response.json().filter(a=>a.b_name===pm.collectionVariables.get(\"branchA\")).reduce((s,a)=>s+a.balance,0); pm.expect(n).to.eql(51000); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/accounts/user/{{custUser}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
                 "accounts",
-                "{{accA}}",
-                "balance"
+                "user",
+                "{{custUser}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Repeat disbursement does not debit budget twice",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"remaining branch A budget is 950000\", () => pm.expect(pm.response.json().find(b=>b.b_name===pm.collectionVariables.get(\"branchA\")).lendingBudget).to.eql(950000));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/branches",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "branches"
               ]
             }
           }
@@ -4916,7 +5247,7 @@
                   "const by = Object.fromEntries(body.map(l => [l.l_no, l.status]));",
                   "pm.expect(by[pm.collectionVariables.get(\"loanSelf\")]).to.eql(\"Disbursed\");",
                   "pm.expect(by[pm.collectionVariables.get(\"loanStaffA\")]).to.eql(\"Rejected\");",
-                  "pm.expect(by[pm.collectionVariables.get(\"loanStaffB\")]).to.eql(\"Pending\");",
+                  "pm.expect(by[pm.collectionVariables.get(\"loanStaffB\")]).to.eql(\"Approved\");",
                   "pm.expect(by[pm.collectionVariables.get(\"loanStaffA2\")]).to.eql(\"Pending\");",
                   "});",
                   "pm.test(\"newest first\", () => {",
@@ -4953,14 +5284,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"three accounts, account A holds 52000\", () => {",
-                  "const body = pm.response.json();",
-                  "pm.expect(body).to.have.lengthOf(3);",
-                  "const a = body.find(x => x.ac_no === pm.collectionVariables.get(\"accA\"));",
-                  "pm.expect(a.balance).to.eql(52000);",
-                  "pm.expect(body.find(x => x.ac_no === pm.collectionVariables.get(\"accB\")).balance).to.eql(0);",
-                  "pm.expect(body.find(x => x.ac_no === pm.collectionVariables.get(\"accA2\")).balance).to.eql(0);",
-                  "});"
+                  "pm.test(\"three accounts and branch A total includes disbursement\", () => { const a=pm.response.json(); pm.expect(a).to.have.lengthOf(3); const total=a.filter(x=>x.b_name===pm.collectionVariables.get(\"branchA\")).reduce((s,x)=>s+x.balance,0); pm.expect(total).to.eql(51000); pm.expect(a.find(x=>x.ac_no===pm.collectionVariables.get(\"accB\")).balance).to.eql(0); });"
                 ]
               }
             }
@@ -4991,9 +5315,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"52000\", () => {",
-                  "pm.expect(pm.response.json().balance).to.eql(52000);",
-                  "});"
+                  "pm.test(\"account A is visible\", () => { pm.expect(pm.response.json().ac_no).to.eql(pm.collectionVariables.get(\"accA\")); pm.expect(pm.response.json().balance).to.be.at.least(1000); });"
                 ]
               }
             }

@@ -226,7 +226,11 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/loanDolph
   .catch((err) => console.error(err));
 
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok' });
+  const databaseConnected = mongoose.connection.readyState === 1;
+  res.status(databaseConnected ? 200 : 503).json({
+    status: databaseConnected ? 'ok' : 'starting',
+    database: databaseConnected ? 'connected' : 'disconnected'
+  });
 });
 
 // ============================== AUTH ==============================
