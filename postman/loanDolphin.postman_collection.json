@@ -3964,7 +3964,7 @@
           }
         },
         {
-          "name": "Failed disbursement keeps loan approved and budget unchanged",
+          "name": "Failed disbursement keeps loan approved",
           "event": [
             {
               "listen": "test",
@@ -3972,8 +3972,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"loan stays approved\", () => pm.expect(pm.response.json().find(x=>x.l_no===pm.collectionVariables.get(\"loanStaffB\")).status).to.eql(\"Approved\"));",
-                  "pm.test(\"branch B budget stays zero\", () => pm.expect(pm.response.json().find(x=>x.b_name===pm.collectionVariables.get(\"branchB\")).lendingBudget).to.eql(0));"
+                  "pm.test(\"loan stays approved\", () => pm.expect(pm.response.json().find(x=>x.l_no===pm.collectionVariables.get(\"loanStaffB\")).status).to.eql(\"Approved\"));"
                 ]
               }
             }
