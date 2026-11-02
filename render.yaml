@@ -26,3 +26,7 @@ services:
       # Render asks for this value when the Blueprint is first created.
       - key: MONGODB_URI
         sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false

@@ -19,6 +19,7 @@ import User from './models/User.js';
 import Loan from './models/Loan.js';
 import Manager from './models/Manager.js';
 import Account from './models/Account.js';
+import { notifyLoanDisbursed } from './services/telegramNotifications.js';
 
 const app = express();
 app.use(express.json());
@@ -717,6 +718,18 @@ app.put('/api/loans/:id/status', asyncHandler(async (req, res) => {
       } catch (emitError) {
         console.error('Failed to emit loan_status_updated:', emitError);
       }
+    }
+
+    if (status === 'Disbursed' && previousStatus !== 'Disbursed') {
+      // Send out of band so Telegram latency cannot hold up a completed disbursement.
+      void notifyLoanDisbursed({
+        loanNumber: loan.l_no,
+        amount: loan.amt,
+        branchName: loan.b_name,
+        managerUserId: requestingUser.userid
+      }).catch((notificationError) => {
+        console.error('Telegram disbursement notification failed:', notificationError.message);
+      });
     }
 
     res.json(loan);

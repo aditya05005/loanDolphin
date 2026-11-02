@@ -146,3 +146,17 @@ http://localhost:5000/api/loans
 
 This setup provides the foundation for a REST API layer connected to MongoDB, ready for CRUD endpoints and front-end integration.
 
+## Telegram disbursement notifications
+
+When a loan is successfully disbursed, the backend sends an operational alert to the Telegram chat configured by `TELEGRAM_CHAT_ID`. The message contains the loan number, amount, branch, and staff user ID. If Telegram is unavailable, the disbursement still succeeds and the failure is written to the server log.
+
+Configure `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` as backend environment variables. For local development, add them to `backend/.env` (that file is git-ignored). In Render, add them to the service's Environment settings. Never commit the bot token.
+
+To create the destination:
+
+1. In Telegram, open [@BotFather](https://t.me/BotFather), send `/newbot`, and follow its prompts. Store the token it returns as `TELEGRAM_BOT_TOKEN`.
+2. Open the new bot and send `/start`. For a group destination, add the bot to the group and send a command there.
+3. Call Telegram's `getUpdates` method with the bot token and copy the destination chat's `message.chat.id` value into `TELEGRAM_CHAT_ID`. Telegram documents the Bot API and `sendMessage` parameters [here](https://core.telegram.org/bots/api#sendmessage).
+4. Set both variables in Render's service environment (or in local `backend/.env`) and restart/redeploy the backend.
+5. Approve and disburse a test loan. The configured chat receives a message with its loan number, amount, branch, and disbursing staff user ID.
+
