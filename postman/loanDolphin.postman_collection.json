@@ -4436,8 +4436,8 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"1300\", () => {",
-                  "pm.expect(pm.response.json().balance).to.eql(1300);",
+                  "pm.test(\"balance is 300 before disbursement\", () => {",
+                  "pm.expect(pm.response.json().balance).to.eql(300);",
                   "});"
                 ]
               }

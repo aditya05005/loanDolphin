@@ -77,9 +77,17 @@ jobs:
       - run: npm run build
         working-directory: frontend
 
+  container:
+    name: Docker image build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build application image
+        run: docker build --tag loandolphin:ci .
+
   deploy:
     name: Deploy to Render
-    needs: [backend, frontend]
+    needs: [backend, frontend, container]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production

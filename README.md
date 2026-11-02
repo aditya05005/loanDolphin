@@ -160,3 +160,21 @@ To create the destination:
 4. Set both variables in Render's service environment (or in local `backend/.env`) and restart/redeploy the backend.
 5. Approve and disburse a test loan. The configured chat receives a message with its loan number, amount, branch, and disbursing staff user ID.
 
+## Run with Docker Compose
+
+Docker Compose runs the web app and MongoDB together. The app image builds the React frontend and serves it from Express, so the browser uses the same origin for the API and Socket.IO.
+
+1. Install Docker Desktop (Windows/macOS) or Docker Engine with the Compose plugin (Linux).
+2. Copy `.env.example` to `.env`, then set a long random `JWT_SECRET` and a non-default `ADMIN_PASSWORD`. Telegram variables are optional.
+3. From the repository root, run:
+
+```sh
+docker compose up --build
+```
+
+4. Open `http://localhost:5000`. Sign in with `admin` and the `ADMIN_PASSWORD` from `.env` on a fresh database.
+
+MongoDB data persists in the `mongo-data` volume across container restarts. Stop the services with `docker compose down`; this keeps the database volume. `docker compose down --volumes` also deletes the local database data.
+
+The Compose app uses HTTP for localhost, so its cookie configuration is set for local development. For a hosted deployment, use HTTPS, a strong `JWT_SECRET`, a private/persistent MongoDB service, and set the runtime environment to production. The Render Blueprint remains a Node service; it does not switch to Docker automatically. GitHub Actions now builds the Docker image as a CI gate before deployment.
+
