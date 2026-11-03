@@ -129,6 +129,7 @@ export default function ActiveLoansTable({
                 <th className="py-2 pr-4">amt</th>
                 <th className="py-2 pr-4">LOAN_DATE</th>
                 <th className="py-2 pr-4">status</th>
+                <th className="py-2 pr-4">Approval probability</th>
                 {loans.some(canManageLoan) && <th className="py-2 pr-4">Actions</th>}
               </tr>
             </thead>
@@ -167,6 +168,18 @@ export default function ActiveLoansTable({
                       >
                         {currentLoanStatus}
                       </span>
+                    </td>
+                    <td className="py-3 pr-4">
+                      {currentLoanStatus === "Pending" && loan.mlPrediction ? (
+                        <div className="min-w-36">
+                          <span className={`inline-block rounded-full px-2 py-1 text-[10px] font-semibold ${loan.mlPrediction.label === "Approved" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300" : "bg-rose-100 text-rose-800 dark:bg-rose-950/50 dark:text-rose-300"}`}>
+                            {Math.round(loan.mlPrediction.probability * 100)}% · {loan.mlPrediction.label}
+                          </span>
+                          <p className="mt-1 max-w-48 text-[10px] text-slate-500 dark:text-slate-400">{(loan.mlPrediction.topFactors || []).slice(0, 2).join(" · ")}</p>
+                        </div>
+                      ) : currentLoanStatus === "Pending" ? (
+                        <span className="text-xs text-slate-400">Not scored</span>
+                      ) : <span className="text-xs text-slate-400">—</span>}
                     </td>
                     {canManageLoan(loan) && (
                       <td className="py-3 pr-4">

@@ -2,6 +2,7 @@ import React from "react";
 import ActiveLoansTable from "./ActiveLoansTable";
 import BranchCards from "./BranchCards";
 import MetricsOverview from "./MetricsOverview";
+import ModelInsights from "./ModelInsights";
 
 export default function ManagerDashboard({
   currentUser,
@@ -27,6 +28,7 @@ export default function ManagerDashboard({
       </div>
 
       <MetricsOverview loans={loans} branches={branches} />
+      {(currentUser.type === "administrator" || currentUser.type === "branch_manager") && <ModelInsights />}
 
       <div className="grid grid-cols-1 gap-6">
         <div className="space-y-6">
