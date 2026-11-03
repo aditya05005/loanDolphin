@@ -20,6 +20,7 @@ import Loan from './models/Loan.js';
 import Manager from './models/Manager.js';
 import Account from './models/Account.js';
 import { notifyLoanDisbursed } from './services/telegramNotifications.js';
+import { requestMlPrediction } from './services/mlPrediction.js';
 
 const app = express();
 app.use(express.json());
@@ -133,6 +134,27 @@ const isNonNegativeFiniteNumber = (value) =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
 const isNonEmptyString = (value) => typeof value === 'string' && value.trim().length > 0;
+
+const validateApplicant = (applicant) => {
+  const enums = {
+    married: ['Yes', 'No'],
+    dependents: ['0', '1', '2', '3+'],
+    education: ['Graduate', 'Not Graduate'],
+    selfEmployed: ['Yes', 'No'],
+    propertyArea: ['Urban', 'Semiurban', 'Rural']
+  };
+  if (!applicant || typeof applicant !== 'object' || Array.isArray(applicant)) return false;
+  for (const [field, values] of Object.entries(enums)) {
+    if (!values.includes(applicant[field])) return false;
+  }
+  return isNonNegativeFiniteNumber(applicant.applicantIncome) &&
+    isNonNegativeFiniteNumber(applicant.coapplicantIncome) &&
+    isPositiveFiniteNumber(applicant.termMonths) &&
+    Number.isInteger(applicant.termMonths) &&
+    [0, 1].includes(applicant.creditHistory);
+};
+
+const isAnalyticsStaff = (user) => user && ['administrator', 'branch_manager'].includes(user.type);
 
 // ---------- real-time (socket.io) ----------
 
@@ -500,6 +522,61 @@ app.get('/api/loans', asyncHandler(async (req, res) => {
   }
 }));
 
+app.get('/api/analytics/model', asyncHandler(async (req, res) => {
+  const requestingUser = await getRequestingUser(req);
+  if (!isAnalyticsStaff(requestingUser)) {
+    return res.status(requestingUser ? 403 : 401).json({ message: 'Staff access required.' });
+  }
+  const metricsPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../ml/metrics.json');
+  try {
+    return res.json(JSON.parse(fs.readFileSync(metricsPath, 'utf8')));
+  } catch (error) {
+    if (error.code === 'ENOENT') return res.status(404).json({ message: 'Model metrics are not available yet.' });
+    console.error('Failed to read model metrics:', error);
+    return res.status(500).json({ message: 'Failed to read model metrics.' });
+  }
+}));
+
+app.get('/api/analytics/applications', asyncHandler(async (req, res) => {
+  const requestingUser = await getRequestingUser(req);
+  if (!isAnalyticsStaff(requestingUser)) {
+    return res.status(requestingUser ? 403 : 401).json({ message: 'Staff access required.' });
+  }
+  const filter = { 'mlPrediction.probability': { $exists: true } };
+  if (requestingUser.type === 'branch_manager') {
+    const manager = await Manager.findOne({ userid: requestingUser.userid });
+    if (!manager) return res.status(403).json({ message: 'Access denied.' });
+    filter.b_name = manager.b_name;
+  }
+  const loans = await Loan.find(filter).select('status mlPrediction.probability mlPrediction.label');
+  const riskDistribution = { high: 0, medium: 0, low: 0 };
+  const predictedVsStaffDecision = {
+    Approved: { Approved: 0, Rejected: 0 },
+    Rejected: { Approved: 0, Rejected: 0 }
+  };
+  let decided = 0;
+  let agreed = 0;
+  for (const loan of loans) {
+    const probability = loan.mlPrediction.probability;
+    if (probability < 0.4) riskDistribution.high += 1;
+    else if (probability < 0.7) riskDistribution.medium += 1;
+    else riskDistribution.low += 1;
+    if (['Approved', 'Rejected', 'Disbursed'].includes(loan.status)) {
+      decided += 1;
+      const actualLabel = loan.status === 'Rejected' ? 'Rejected' : 'Approved';
+      predictedVsStaffDecision[loan.mlPrediction.label][actualLabel] += 1;
+      if (loan.mlPrediction.label === actualLabel) agreed += 1;
+    }
+  }
+  res.json({
+    scoredApplications: loans.length,
+    riskDistribution,
+    predictedVsStaffDecision,
+    decidedApplications: decided,
+    agreementRate: decided ? agreed / decided : null
+  });
+}));
+
 // Staff-side loan creation (admin / senior_manager / branch_manager).
 app.post('/api/loans', asyncHandler(async (req, res) => {
   const { amt, b_name, borrowers, c_id } = req.body || {};
@@ -526,6 +603,13 @@ app.post('/api/loans', asyncHandler(async (req, res) => {
     return res.status(400).json({ message: 'c_id does not match an existing customer.' });
   }
 
+  if (customer && await Loan.exists({
+    status: 'Pending',
+    $or: [{ customerUserId: customer.userid }, { c_id: customer.c_id }]
+  })) {
+    return res.status(409).json({ message: 'This customer already has a loan application awaiting a decision.' });
+  }
+
   if (requestingUser.type === 'branch_manager') {
     const manager = await Manager.findOne({ userid: requestingUser.userid });
     if (!manager || manager.b_name !== branch.b_name) {
@@ -546,6 +630,9 @@ app.post('/api/loans', asyncHandler(async (req, res) => {
     });
     res.status(201).json(loan);
   } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({ message: 'This customer already has a loan application awaiting a decision.' });
+    }
     console.error('Error creating loan:', error);
     res.status(500).json({ message: 'Failed to create loan.' });
   }
@@ -553,10 +640,10 @@ app.post('/api/loans', asyncHandler(async (req, res) => {
 
 // Self-service loan application by a logged-in customer.
 app.post('/api/customer/loans', strictLimiter, asyncHandler(async (req, res) => {
-  const { amt, b_name } = req.body || {};
+  const { amt, b_name, applicant } = req.body || {};
 
-  if (!isPositiveFiniteNumber(amt) || !isNonEmptyString(b_name)) {
-    return res.status(400).json({ message: 'A positive amount and branch are required.' });
+  if (!isPositiveFiniteNumber(amt) || !isNonEmptyString(b_name) || !validateApplicant(applicant)) {
+    return res.status(400).json({ message: 'A positive amount, branch, and valid applicant details are required.' });
   }
 
   const requestingUser = await getRequestingUser(req);
@@ -574,7 +661,10 @@ app.post('/api/customer/loans', strictLimiter, asyncHandler(async (req, res) => 
     return res.status(400).json({ message: 'No customer record is linked to this user.' });
   }
 
-  const pendingLoan = await Loan.exists({ customerUserId: requestingUser.userid, status: 'Pending' });
+  const pendingLoan = await Loan.exists({
+    status: 'Pending',
+    $or: [{ customerUserId: requestingUser.userid }, { c_id: customer.c_id }]
+  });
   if (pendingLoan) {
     return res.status(409).json({ message: 'You already have a loan application awaiting a decision.' });
   }
@@ -595,11 +685,25 @@ app.post('/api/customer/loans', strictLimiter, asyncHandler(async (req, res) => 
       customerUserId: requestingUser.userid,
       c_id: customer.c_id,
       borrowers: [customer.c_id],
+      applicant,
       loan_date: new Date(),
       status: 'Pending'
     });
-    res.status(201).json(loan);
+    try {
+      const prediction = await requestMlPrediction(amt, applicant);
+      loan.mlPrediction = prediction;
+      await loan.save();
+    } catch (error) {
+      loan.mlPrediction = undefined;
+      console.error(`ML scoring failed for loan ${loan.l_no}; application remains valid:`, error.message);
+    }
+    const customerLoan = loan.toObject();
+    delete customerLoan.mlPrediction;
+    res.status(201).json(customerLoan);
   } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({ message: 'You already have a loan application awaiting a decision.' });
+    }
     console.error('Error creating customer loan:', error);
     res.status(500).json({ message: 'Failed to create loan.' });
   }
@@ -612,7 +716,7 @@ app.get('/api/customer/loans', asyncHandler(async (req, res) => {
   const customer = await Customer.findOne({ userid: requestingUser.userid });
   const ownership = [{ customerUserId: requestingUser.userid }];
   if (customer) ownership.push({ c_id: customer.c_id });
-  const loans = await Loan.find({ $or: ownership }).sort({ loan_date: -1 });
+  const loans = await Loan.find({ $or: ownership }).select('-mlPrediction').sort({ loan_date: -1 });
   res.json(loans);
 }));
 
@@ -707,13 +811,15 @@ app.put('/api/loans/:id/status', asyncHandler(async (req, res) => {
     // Tell the borrower right away. A failed push must never fail the request.
     if (loan.customerUserId && previousStatus !== status) {
       try {
+        const customerLoan = loan.toObject();
+        delete customerLoan.mlPrediction;
         io.to(userRoom(loan.customerUserId)).emit('loan_status_updated', {
           l_no: loan.l_no,
           amt: loan.amt,
           b_name: loan.b_name,
           previousStatus,
           status: loan.status,
-          loan: loan.toObject()
+          loan: customerLoan
         });
       } catch (emitError) {
         console.error('Failed to emit loan_status_updated:', emitError);
