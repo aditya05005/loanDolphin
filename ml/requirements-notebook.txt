@@ -1,0 +1,7 @@
+# Install this file to execute analysis.ipynb locally; Render only needs requirements.txt.
+-r requirements.txt
+ipykernel==6.29.5
+matplotlib==3.9.2
+nbclient==0.10.2
+nbconvert==7.16.4
+nbformat==5.10.4
