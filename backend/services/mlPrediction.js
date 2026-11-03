@@ -3,6 +3,14 @@ const FEATURE_NAMES = [
   'CoapplicantIncome', 'LoanAmount', 'Loan_Amount_Term', 'Credit_History', 'Property_Area'
 ];
 
+export class MlPredictionError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = 'MlPredictionError';
+    this.code = code;
+  }
+}
+
 export function applicantToModelInput(amt, applicant) {
   return {
     Married: applicant.married,
@@ -20,19 +28,35 @@ export function applicantToModelInput(amt, applicant) {
 
 export async function requestMlPrediction(amt, applicant) {
   const baseUrl = (process.env.ML_SERVICE_URL || 'http://localhost:8000').replace(/\/$/, '');
-  const response = await fetch(`${baseUrl}/predict`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(applicantToModelInput(amt, applicant)),
-    signal: AbortSignal.timeout(1800)
-  });
-  if (!response.ok) throw new Error(`ML service returned HTTP ${response.status}`);
-  const result = await response.json();
+  let response;
+  try {
+    response = await fetch(`${baseUrl}/predict`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(applicantToModelInput(amt, applicant)),
+      signal: AbortSignal.timeout(1800)
+    });
+  } catch (error) {
+    throw new MlPredictionError('ML_SERVICE_UNREACHABLE', error.message);
+  }
+  if (!response.ok) {
+    const code = response.status >= 500 ? 'ML_MODEL_INFERENCE_ERROR' : 'ML_INPUT_PIPELINE_ERROR';
+    throw new MlPredictionError(code, `ML service returned HTTP ${response.status}`);
+  }
+  let result;
+  try {
+    result = await response.json();
+  } catch {
+    throw new MlPredictionError('ML_INVALID_RESPONSE', 'ML service did not return valid JSON');
+  }
+  if (!result || typeof result !== 'object' || Array.isArray(result)) {
+    throw new MlPredictionError('ML_INVALID_RESPONSE', 'ML service returned an invalid prediction payload');
+  }
   if (typeof result.probability !== 'number' || !Number.isFinite(result.probability) ||
       result.probability < 0 || result.probability > 1 ||
       !['Approved', 'Rejected'].includes(result.label) ||
       !Array.isArray(result.topFactors) || typeof result.modelVersion !== 'string') {
-    throw new Error('ML service returned an invalid prediction payload');
+    throw new MlPredictionError('ML_INVALID_RESPONSE', 'ML service returned an invalid prediction payload');
   }
   return {
     probability: result.probability,

@@ -176,6 +176,16 @@ export default function App() {
     }
   }
 
+  async function predictLoanProbability(id) {
+    const updatedLoan = await apiRequest(`/loans/${encodeURIComponent(id)}/predict`, {
+      method: 'POST'
+    });
+    setLoans((prev) => prev.map((loan) =>
+      loan.l_no === updatedLoan.l_no ? updatedLoan : loan
+    ));
+    return updatedLoan;
+  }
+
   async function handleCreateBranch(branchForm) {
     if (currentUser?.type !== "administrator") {
       return { ok: false, message: "Only administrators can create a new branch." };
@@ -337,6 +347,7 @@ export default function App() {
         managers={managers}
         managerBranch={managerBranch}
         updateLoanStatus={updateLoanStatus}
+        predictLoanProbability={predictLoanProbability}
         handleCreateBranch={handleCreateBranch}
         handleUpdateBranch={handleUpdateBranch}
       />

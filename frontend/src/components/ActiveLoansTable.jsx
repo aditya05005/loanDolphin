@@ -22,12 +22,16 @@ export default function ActiveLoansTable({
   loans = [],
   customers = [],
   onUpdateLoanStatus = null,
+  onPredictLoan = null,
   managerBranch = null
 }) {
   const { currentUser } = useAuth();
   const [statusFilter, setStatusFilter] = useState("All");
   const [updatingId, setUpdatingId] = useState(null);
   const [actionError, setActionError] = useState("");
+  const [predictingId, setPredictingId] = useState(null);
+  const [shownPredictions, setShownPredictions] = useState({});
+  const [predictionErrors, setPredictionErrors] = useState({});
 
   const canManageGlobal =
     currentUser?.type === "administrator" || currentUser?.type === "senior_manager";
@@ -39,6 +43,11 @@ export default function ActiveLoansTable({
       managerBranch &&
       loan.b_name === managerBranch
     );
+  }
+
+  function canScoreLoan(loan) {
+    if (currentUser?.type === "administrator") return true;
+    return currentUser?.type === "branch_manager" && managerBranch && loan.b_name === managerBranch;
   }
 
   function customerName(c_id) {
@@ -71,6 +80,33 @@ export default function ActiveLoansTable({
       setActionError(err.message || "Failed to update loan status.");
     } finally {
       setUpdatingId(null);
+    }
+  }
+
+  async function handlePredictLoan(loan) {
+    const id = loan.l_no || loan._id;
+    setPredictingId(id);
+    setShownPredictions((previous) => ({ ...previous, [id]: false }));
+    setPredictionErrors((previous) => ({ ...previous, [id]: "" }));
+    try {
+      if (typeof onPredictLoan !== "function") throw new Error("Prediction action is unavailable.");
+      await onPredictLoan(id);
+      setShownPredictions((previous) => ({ ...previous, [id]: true }));
+    } catch (error) {
+      const messages = {
+        APPLICANT_DATA_MISSING: "Applicant details are missing; this older loan cannot be scored.",
+        APPLICANT_DATA_INVALID: "Applicant details are incomplete; check the data pipeline.",
+        ML_SERVICE_UNREACHABLE: "ML service is unreachable; check ML_SERVICE_URL and the service deployment.",
+        ML_INPUT_PIPELINE_ERROR: "ML service rejected the input; check the backend feature mapping and ML input validation.",
+        ML_MODEL_INFERENCE_ERROR: "ML service failed during inference; check its model loading and runtime logs.",
+        ML_INVALID_RESPONSE: "ML service responded, but its output did not match the expected prediction format."
+      };
+      setPredictionErrors((previous) => ({
+        ...previous,
+        [id]: messages[error.code] || error.message || "Prediction failed."
+      }));
+    } finally {
+      setPredictingId(null);
     }
   }
 
@@ -170,15 +206,37 @@ export default function ActiveLoansTable({
                       </span>
                     </td>
                     <td className="py-3 pr-4">
-                      {currentLoanStatus === "Pending" && loan.mlPrediction ? (
-                        <div className="min-w-36">
-                          <span className={`inline-block rounded-full px-2 py-1 text-[10px] font-semibold ${loan.mlPrediction.label === "Approved" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300" : "bg-rose-100 text-rose-800 dark:bg-rose-950/50 dark:text-rose-300"}`}>
-                            {Math.round(loan.mlPrediction.probability * 100)}% · {loan.mlPrediction.label}
-                          </span>
-                          <p className="mt-1 max-w-48 text-[10px] text-slate-500 dark:text-slate-400">{(loan.mlPrediction.topFactors || []).slice(0, 2).join(" · ")}</p>
-                        </div>
-                      ) : currentLoanStatus === "Pending" ? (
-                        <span className="text-xs text-slate-400">Not scored</span>
+                      {currentLoanStatus === "Pending" && canScoreLoan(loan) ? (() => {
+                        const loanId = loan.l_no || loan._id;
+                        const prediction = loan.mlPrediction;
+                        const probability = prediction?.probability;
+                        const hasValidProbability = typeof probability === "number" &&
+                          Number.isFinite(probability) && probability >= 0 && probability <= 1;
+                        const isPredicting = predictingId === loanId;
+                        return (
+                          <div className="min-w-40 space-y-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handlePredictLoan(loan)}
+                              disabled={isPredicting}
+                              className="rounded bg-indigo-100 px-2.5 py-1.5 text-[10px] font-semibold text-indigo-800 hover:bg-indigo-200 disabled:cursor-wait disabled:opacity-60 dark:bg-indigo-950/60 dark:text-indigo-300 dark:hover:bg-indigo-900"
+                            >
+                              {isPredicting ? "Predicting…" : "Predict Probability"}
+                            </button>
+                            {shownPredictions[loanId] && hasValidProbability && (
+                              <div>
+                                <span className={`inline-block rounded-full px-2 py-1 text-[10px] font-semibold ${prediction.label === "Approved" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300" : "bg-rose-100 text-rose-800 dark:bg-rose-950/50 dark:text-rose-300"}`}>
+                                  {Math.round(probability * 100)}% approval probability · {prediction.label}
+                                </span>
+                                <p className="mt-1 max-w-48 text-[10px] text-slate-500 dark:text-slate-400">{(prediction.topFactors || []).slice(0, 2).join(" · ")}</p>
+                                <p className="text-[9px] text-slate-400">Model {prediction.modelVersion}</p>
+                              </div>
+                            )}
+                            {predictionErrors[loanId] && <p role="status" className="max-w-56 text-[10px] text-rose-700 dark:text-rose-300">{predictionErrors[loanId]}</p>}
+                          </div>
+                        );
+                      })() : currentLoanStatus === "Pending" ? (
+                        <span className="text-xs text-slate-400">—</span>
                       ) : <span className="text-xs text-slate-400">—</span>}
                     </td>
                     {canManageLoan(loan) && (

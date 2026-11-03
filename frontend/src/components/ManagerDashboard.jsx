@@ -12,6 +12,7 @@ export default function ManagerDashboard({
   managers,
   managerBranch,
   updateLoanStatus,
+  predictLoanProbability,
   handleCreateBranch,
   handleUpdateBranch
 }) {
@@ -38,6 +39,7 @@ export default function ManagerDashboard({
             currentUser={currentUser}
             managerBranch={managerBranch}
             onUpdateLoanStatus={updateLoanStatus}
+            onPredictLoan={predictLoanProbability}
           />
           <BranchCards
             branches={branches}

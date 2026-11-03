@@ -522,6 +522,59 @@ app.get('/api/loans', asyncHandler(async (req, res) => {
   }
 }));
 
+app.post('/api/loans/:id/predict', asyncHandler(async (req, res) => {
+  const requestingUser = await getRequestingUser(req);
+  if (!isAnalyticsStaff(requestingUser)) {
+    return res.status(requestingUser ? 403 : 401).json({ message: 'Staff access required.' });
+  }
+
+  const loan = await Loan.findOne({ l_no: req.params.id });
+  if (!loan) return res.status(404).json({ message: 'Loan not found.' });
+  if (loan.status !== 'Pending') {
+    return res.status(409).json({ message: 'Only pending loans can be scored.' });
+  }
+
+  if (requestingUser.type === 'branch_manager') {
+    const manager = await Manager.findOne({ userid: requestingUser.userid });
+    if (!manager || manager.b_name !== loan.b_name) {
+      return res.status(403).json({ message: 'Branch managers can only score loans at their assigned branch.' });
+    }
+  }
+
+  if (!loan.applicant) {
+    return res.status(422).json({
+      code: 'APPLICANT_DATA_MISSING',
+      message: 'This application has no applicant profile. It cannot be scored by the model.'
+    });
+  }
+  if (!validateApplicant(loan.applicant)) {
+    return res.status(422).json({
+      code: 'APPLICANT_DATA_INVALID',
+      message: 'Applicant details are incomplete or invalid. Check the application data pipeline.'
+    });
+  }
+
+  let prediction;
+  try {
+    prediction = await requestMlPrediction(loan.amt, loan.applicant);
+  } catch (error) {
+    console.error(`ML prediction failed for loan ${loan.l_no} (${error.code || 'ML_MODEL_INFERENCE_ERROR'}):`, error.message);
+    return res.status(error.code === 'ML_SERVICE_UNREACHABLE' ? 503 : 502).json({
+      code: error.code || 'ML_MODEL_INFERENCE_ERROR',
+      message: 'The prediction request failed. The code identifies whether the service was unreachable, the input was rejected, or model inference failed.'
+    });
+  }
+  const updatedLoan = await Loan.findOneAndUpdate(
+    { l_no: loan.l_no, status: 'Pending' },
+    { $set: { mlPrediction: prediction } },
+    { new: true, runValidators: true }
+  );
+  if (!updatedLoan) {
+    return res.status(409).json({ message: 'This loan is no longer pending and cannot be scored.' });
+  }
+  return res.json(updatedLoan);
+}));
+
 app.get('/api/analytics/model', asyncHandler(async (req, res) => {
   const requestingUser = await getRequestingUser(req);
   if (!isAnalyticsStaff(requestingUser)) {
