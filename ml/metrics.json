@@ -1,0 +1,168 @@
+{
+  "model_name": "Random Forest",
+  "model_version": "rf-ca2-v1",
+  "dataset": "Analytics Vidhya Loan Prediction train.csv",
+  "n_rows": 614,
+  "n_train": 429,
+  "n_test": 185,
+  "accuracy": 0.8054054054054054,
+  "precision": 0.8321167883211679,
+  "recall": 0.8976377952755905,
+  "f1": 0.8636363636363636,
+  "roc_auc": 0.8034211240836274,
+  "cv_f1_mean": 0.83093413431247,
+  "cv_f1_std": 0.026678921676278566,
+  "confusion_matrix": [
+    [
+      35,
+      23
+    ],
+    [
+      13,
+      114
+    ]
+  ],
+  "confusion_matrix_labels": [
+    "Not approved",
+    "Approved"
+  ],
+  "model_comparison": [
+    {
+      "model": "KNN",
+      "accuracy": 0.8486486486486486,
+      "precision": 0.8367346938775511,
+      "recall": 0.968503937007874,
+      "f1": 0.8978102189781022,
+      "roc_auc": 0.8021992940537606,
+      "cv_f1_mean": 0.8514801693887794,
+      "cv_f1_std": 0.007841705469844551
+    },
+    {
+      "model": "Random Forest",
+      "accuracy": 0.8054054054054054,
+      "precision": 0.8321167883211679,
+      "recall": 0.8976377952755905,
+      "f1": 0.8636363636363636,
+      "roc_auc": 0.8034211240836274,
+      "cv_f1_mean": 0.83093413431247,
+      "cv_f1_std": 0.026678921676278566
+    },
+    {
+      "model": "Logistic Regression",
+      "accuracy": 0.772972972972973,
+      "precision": 0.8571428571428571,
+      "recall": 0.8031496062992126,
+      "f1": 0.8292682926829268,
+      "roc_auc": 0.8218843334238393,
+      "cv_f1_mean": 0.7674739717895517,
+      "cv_f1_std": 0.028925043666599783
+    },
+    {
+      "model": "Decision Tree",
+      "accuracy": 0.6756756756756757,
+      "precision": 0.845360824742268,
+      "recall": 0.6456692913385826,
+      "f1": 0.7321428571428571,
+      "roc_auc": 0.7598425196850394,
+      "cv_f1_mean": 0.6939024128467871,
+      "cv_f1_std": 0.05358965821178212
+    }
+  ],
+  "feature_importances": {
+    "Credit": 0.2336328195613129,
+    "ApplicantIncome": 0.19157870727953707,
+    "LoanAmount": 0.17652153467044107,
+    "CoapplicantIncome": 0.11879781778135828,
+    "Dependents": 0.0742526161387441,
+    "Property": 0.07202224954938476,
+    "Married": 0.041773844145561415,
+    "Education": 0.03587521748727697,
+    "Loan": 0.03213027237205669,
+    "Self": 0.02341492101432683
+  },
+  "eda": {
+    "approval_rate_by_credit_history": {
+      "0.0": 0.07865168539325842,
+      "1.0": 0.7957894736842105,
+      "nan": 0.74
+    },
+    "approval_rate_by_property_area": {
+      "Rural": 0.6145251396648045,
+      "Semiurban": 0.7682403433476395,
+      "Urban": 0.6584158415841584
+    },
+    "approval_rate_by_education": {
+      "Graduate": 0.7083333333333334,
+      "Not Graduate": 0.6119402985074627
+    },
+    "approval_rate_by_gender_eda_only": {
+      "Female": 0.6696428571428571,
+      "Male": 0.6932515337423313,
+      "nan": 0.6153846153846154
+    },
+    "gender_outcome_correlation_eda_only": 0.019857021688307084,
+    "overall_approval_rate": 0.6872964169381107,
+    "class_counts": {
+      "Y": 422,
+      "N": 192
+    },
+    "missing_by_column": {
+      "Loan_ID": 0,
+      "Gender": 13,
+      "Married": 3,
+      "Dependents": 15,
+      "Education": 0,
+      "Self_Employed": 32,
+      "ApplicantIncome": 0,
+      "CoapplicantIncome": 0,
+      "LoanAmount": 22,
+      "Loan_Amount_Term": 14,
+      "Credit_History": 50,
+      "Property_Area": 0,
+      "Loan_Status": 0
+    },
+    "duplicate_rows_removed": 0,
+    "iqr_upper_outliers": {
+      "ApplicantIncome": 50,
+      "CoapplicantIncome": 18,
+      "LoanAmount": 39
+    }
+  },
+  "gender_included_comparison": {
+    "without_gender_accuracy": 0.8054054054054054,
+    "with_gender_accuracy": 0.7945945945945946,
+    "without_gender_f1": 0.8636363636363636,
+    "with_gender_f1": 0.8560606060606061,
+    "without_gender_roc_auc": 0.8034211240836274,
+    "with_gender_roc_auc": 0.7821069780070594
+  },
+  "cluster": {
+    "silhouette_score": 0.20744141611343397,
+    "profiles": [
+      {
+        "cluster": 0,
+        "applicants": 292,
+        "approval_rate": 0.8219178082,
+        "median_income": 3279.5,
+        "median_loan": 131.0,
+        "credit_history_rate": 1.0
+      },
+      {
+        "cluster": 1,
+        "applicants": 233,
+        "approval_rate": 0.7510729614,
+        "median_income": 4758.0,
+        "median_loan": 120.0,
+        "credit_history_rate": 1.0
+      },
+      {
+        "cluster": 2,
+        "applicants": 89,
+        "approval_rate": 0.0786516854,
+        "median_income": 3547.0,
+        "median_loan": 125.0,
+        "credit_history_rate": 0.0
+      }
+    ]
+  }
+}
