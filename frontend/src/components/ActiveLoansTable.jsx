@@ -35,6 +35,7 @@ export default function ActiveLoansTable({
   const [predictingId, setPredictingId] = useState(null);
   const [shownPredictions, setShownPredictions] = useState({});
   const [predictionErrors, setPredictionErrors] = useState({});
+  const [selectedLoanId, setSelectedLoanId] = useState(null);
 
   const canManageGlobal =
     currentUser?.type === "administrator" || currentUser?.type === "senior_manager";
@@ -69,6 +70,7 @@ export default function ActiveLoansTable({
     statusFilter === "All"
       ? loans
       : loans.filter((loan) => (loan.status || "Pending") === statusFilter);
+  const selectedLoan = loans.find((loan) => loan.l_no === selectedLoanId);
 
   async function handleStatusChange(loan, nextStatus) {
     const id = loan.l_no || loan._id;
@@ -185,7 +187,14 @@ export default function ActiveLoansTable({
                     className="border-b border-slate-200 dark:border-slate-800 last:border-0"
                   >
                     <td className="py-3 pr-4 text-slate-900 dark:text-slate-200 font-medium">
-                      {loan.l_no}
+                      <button
+                        type="button"
+                        onClick={() => { setSelectedLoanId(loan.l_no); setActionError(""); }}
+                        className="text-left text-emerald-700 underline decoration-dotted underline-offset-2 hover:text-emerald-600 dark:text-emerald-400 dark:hover:text-emerald-300"
+                        aria-label={`View application details for loan ${loan.l_no}`}
+                      >
+                        {loan.l_no}
+                      </button>
                     </td>
                     <td className="py-3 pr-4 text-slate-600 dark:text-slate-300">{loan.b_name}</td>
                     <td className="py-3 pr-4 text-slate-600 dark:text-slate-300">
@@ -301,6 +310,61 @@ export default function ActiveLoansTable({
           </table>
         </div>
       )}
+      {selectedLoan && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedLoanId(null); }}>
+          <section role="dialog" aria-modal="true" aria-labelledby="loan-detail-title" className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl dark:bg-slate-800">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Loan application</p>
+                <h2 id="loan-detail-title" className="mt-1 break-all text-xl font-semibold text-slate-900 dark:text-white">{selectedLoan.l_no}</h2>
+              </div>
+              <button type="button" onClick={() => setSelectedLoanId(null)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700">Close</button>
+            </div>
+
+            <dl className="mt-5 grid gap-x-8 gap-y-4 sm:grid-cols-2">
+              <Detail label="Loan date" value={selectedLoan.loan_date ? new Date(selectedLoan.loan_date).toLocaleDateString() : "Not available"} />
+              <Detail label="Branch" value={selectedLoan.b_name || "Not available"} />
+              <Detail label="Customer" value={customerName(selectedLoan.c_id)} />
+              <Detail label="Loan amount" value={`$${Number(selectedLoan.amt || 0).toLocaleString()}`} />
+              <Detail label="Status" value={selectedLoan.status || "Pending"} />
+              <Detail label="Married" value={selectedLoan.applicant?.married || "Not provided"} />
+              <Detail label="Dependents" value={selectedLoan.applicant?.dependents ?? "Not provided"} />
+              <Detail label="Education" value={selectedLoan.applicant?.education || "Not provided"} />
+              <Detail label="Self employed" value={selectedLoan.applicant?.selfEmployed || "Not provided"} />
+              <Detail label="Applicant income (monthly)" value={selectedLoan.applicant?.applicantIncome != null ? `$${Number(selectedLoan.applicant.applicantIncome).toLocaleString()}` : "Not provided"} />
+              <Detail label="Co-applicant income (monthly)" value={selectedLoan.applicant?.coapplicantIncome != null ? `$${Number(selectedLoan.applicant.coapplicantIncome).toLocaleString()}` : "Not provided"} />
+              <Detail label="Loan term" value={selectedLoan.applicant?.termMonths != null ? `${selectedLoan.applicant.termMonths} months` : "Not provided"} />
+              <Detail label="Credit history" value={selectedLoan.applicant?.creditHistory != null ? (Number(selectedLoan.applicant.creditHistory) === 1 ? "Meets guidelines" : "Does not meet guidelines") : "Not provided"} />
+              <Detail label="Property area" value={selectedLoan.applicant?.propertyArea || "Not provided"} />
+              <Detail label="Approval probability" value={typeof selectedLoan.mlPrediction?.probability === "number" ? `${Math.round(selectedLoan.mlPrediction.probability * 100)}%` : "Not available"} />
+            </dl>
+
+            {actionError && <p role="alert" className="mt-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{actionError}</p>}
+            {canManageLoan(selectedLoan) && (
+              <div className="mt-6 flex flex-wrap gap-2 border-t border-slate-200 pt-4 dark:border-slate-700">
+                {selectedLoan.status !== "Approved" && selectedLoan.status !== "Disbursed" && selectedLoan.status !== "Repaid" && <ActionButton label="Approve" onClick={() => handleStatusChange(selectedLoan, "Approved")} disabled={updatingId === selectedLoan.l_no} tone="green" />}
+                {selectedLoan.status === "Approved" && (currentUser?.type === "branch_manager" || currentUser?.type === "senior_manager") && <ActionButton label="Disburse" onClick={() => handleStatusChange(selectedLoan, "Disbursed")} disabled={updatingId === selectedLoan.l_no} tone="blue" />}
+                {selectedLoan.status !== "Rejected" && selectedLoan.status !== "Disbursed" && selectedLoan.status !== "Repaid" && <ActionButton label="Reject" onClick={() => handleStatusChange(selectedLoan, "Rejected")} disabled={updatingId === selectedLoan.l_no} tone="red" />}
+                {selectedLoan.status !== "Pending" && selectedLoan.status !== "Disbursed" && selectedLoan.status !== "Repaid" && <ActionButton label="Reset to Pending" onClick={() => handleStatusChange(selectedLoan, "Pending")} disabled={updatingId === selectedLoan.l_no} tone="neutral" />}
+              </div>
+            )}
+          </section>
+        </div>
+      )}
     </div>
   );
+}
+
+function Detail({ label, value }) {
+  return <div className="min-w-0 border-b border-slate-100 pb-2 dark:border-slate-700"><dt className="text-xs text-slate-500 dark:text-slate-400">{label}</dt><dd className="mt-1 break-words text-sm font-medium text-slate-900 dark:text-slate-100">{value}</dd></div>;
+}
+
+function ActionButton({ label, onClick, disabled, tone }) {
+  const colors = {
+    green: "bg-emerald-600 hover:bg-emerald-500 text-white",
+    blue: "bg-blue-600 hover:bg-blue-500 text-white",
+    red: "bg-rose-600 hover:bg-rose-500 text-white",
+    neutral: "bg-slate-200 hover:bg-slate-300 text-slate-800 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
+  };
+  return <button type="button" onClick={onClick} disabled={disabled} className={`rounded-lg px-3 py-2 text-sm font-medium disabled:cursor-wait disabled:opacity-60 ${colors[tone]}`}>{disabled ? "Saving…" : label}</button>;
 }
