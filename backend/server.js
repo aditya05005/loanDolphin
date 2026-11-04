@@ -75,7 +75,7 @@ const signToken = (user) =>
   jwt.sign({ userid: user.userid, type: user.type }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 
 const ROLES = ['branch_manager', 'senior_manager', 'administrator', 'customer'];
-const LOAN_STATUSES = ['Pending', 'Approved', 'Rejected', 'Disbursed'];
+const LOAN_STATUSES = ['Pending', 'Approved', 'Rejected', 'Disbursed', 'Repaid'];
 
 // ---------- rate limiting ----------
 
@@ -614,7 +614,7 @@ app.get('/api/analytics/applications', asyncHandler(async (req, res) => {
     if (probability < 0.4) riskDistribution.high += 1;
     else if (probability < 0.7) riskDistribution.medium += 1;
     else riskDistribution.low += 1;
-    if (['Approved', 'Rejected', 'Disbursed'].includes(loan.status)) {
+    if (['Approved', 'Rejected', 'Disbursed', 'Repaid'].includes(loan.status)) {
       decided += 1;
       const actualLabel = loan.status === 'Rejected' ? 'Rejected' : 'Approved';
       predictedVsStaffDecision[loan.mlPrediction.label][actualLabel] += 1;
@@ -773,6 +773,58 @@ app.get('/api/customer/loans', asyncHandler(async (req, res) => {
   res.json(loans);
 }));
 
+app.post('/api/customer/loans/:id/repay', asyncHandler(async (req, res) => {
+  const requestingUser = await getRequestingUser(req);
+  if (!requestingUser) return res.status(401).json({ message: 'Authentication required.' });
+  if (requestingUser.type !== 'customer') return res.status(403).json({ message: 'Customer login required.' });
+
+  const customer = await Customer.findOne({ userid: requestingUser.userid });
+  const ownership = [{ customerUserId: requestingUser.userid }];
+  if (customer) ownership.push({ c_id: customer.c_id });
+  const loan = await Loan.findOne({ l_no: req.params.id, $or: ownership });
+  if (!loan) return res.status(404).json({ message: 'Loan not found.' });
+  if (loan.status === 'Repaid') return res.status(409).json({ message: 'This loan has already been repaid.' });
+  if (loan.status !== 'Disbursed') return res.status(409).json({ message: 'Only disbursed loans can be repaid.' });
+
+  const repaymentDate = new Date();
+  const startDate = loan.disbursedAt || loan.loan_date || repaymentDate;
+  const elapsedYears = Math.max(0, repaymentDate.getTime() - new Date(startDate).getTime()) / (365 * 24 * 60 * 60 * 1000);
+  const interest = Math.round(loan.amt * 0.12 * elapsedYears * 100) / 100;
+  const repaymentAmount = Math.round((loan.amt + interest) * 100) / 100;
+  const repaidLoan = await Loan.findOneAndUpdate(
+    { _id: loan._id, status: 'Disbursed' },
+    { $set: { status: 'Repaid', repaidAt: repaymentDate }, $push: { payments: { amount: repaymentAmount, date: repaymentDate } } },
+    { new: true, runValidators: true }
+  ).select('-mlPrediction');
+  if (!repaidLoan) return res.status(409).json({ message: 'Loan status changed before repayment. Refresh and try again.' });
+
+  const branch = await Branch.findOneAndUpdate(
+    { b_name: loan.b_name },
+    { $inc: { assets: repaymentAmount } },
+    { new: true }
+  );
+  if (!branch) {
+    await Loan.updateOne(
+      { _id: loan._id, status: 'Repaid' },
+      { $set: { status: 'Disbursed' }, $unset: { repaidAt: 1 }, $pull: { payments: { date: repaymentDate, amount: repaymentAmount } } }
+    );
+    return res.status(409).json({ message: 'Branch not found; repayment was not recorded.' });
+  }
+
+  const event = {
+    l_no: repaidLoan.l_no, amt: repaidLoan.amt, b_name: repaidLoan.b_name,
+    previousStatus: 'Disbursed', status: 'Repaid', loan: repaidLoan.toObject(),
+    repaymentAmount, branchAssets: branch.assets
+  };
+  io.to(userRoom(requestingUser.userid)).emit('loan_status_updated', event);
+  const manager = await Manager.findOne({ b_name: loan.b_name });
+  if (manager) io.to(userRoom(manager.userid)).emit('loan_status_updated', event);
+  const administrators = await User.find({ type: 'administrator' }).select('userid');
+  for (const administrator of administrators) io.to(userRoom(administrator.userid)).emit('loan_status_updated', event);
+
+  res.json({ loan: repaidLoan, interest, repaymentAmount, repaidAt: repaymentDate, branch });
+}));
+
 app.put('/api/loans/:id/status', asyncHandler(async (req, res) => {
   const { status } = req.body || {};
   if (!LOAN_STATUSES.includes(status)) {
@@ -806,7 +858,8 @@ app.put('/api/loans/:id/status', asyncHandler(async (req, res) => {
     Pending: ['Approved', 'Rejected'],
     Approved: ['Rejected', 'Disbursed'],
     Rejected: [],
-    Disbursed: []
+    Disbursed: [],
+    Repaid: []
   };
   if (loan.status !== status && !allowedTransitions[loan.status]?.includes(status)) {
     return res.status(409).json({ message: `Cannot change loan status from ${loan.status} to ${status}.` });
@@ -819,7 +872,7 @@ app.put('/api/loans/:id/status', asyncHandler(async (req, res) => {
       // the same loan twice.
       const claimedLoan = await Loan.findOneAndUpdate(
         { _id: loan._id, status: 'Approved' },
-        { $set: { status: 'Disbursed' } },
+        { $set: { status: 'Disbursed', disbursedAt: new Date() } },
         { new: true }
       );
       if (!claimedLoan) {
@@ -856,6 +909,7 @@ app.put('/api/loans/:id/status', asyncHandler(async (req, res) => {
         throw accountError;
       }
       loan.status = 'Disbursed';
+      loan.disbursedAt = claimedLoan.disbursedAt;
     } else {
       loan.status = status;
       await loan.save();

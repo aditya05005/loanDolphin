@@ -15,6 +15,9 @@ function statusColor(status) {
   if (status === "Disbursed") {
     return "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400";
   }
+  if (status === "Repaid") {
+    return "bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-400";
+  }
   return "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400";
 }
 
@@ -134,6 +137,8 @@ export default function ActiveLoansTable({
           <option value="Pending">Pending</option>
           <option value="Approved">Approved</option>
           <option value="Rejected">Rejected</option>
+          <option value="Disbursed">Disbursed</option>
+          <option value="Repaid">Repaid</option>
         </select>
       </div>
 
@@ -242,7 +247,7 @@ export default function ActiveLoansTable({
                     {canManageLoan(loan) && (
                       <td className="py-3 pr-4">
                         <div className="flex items-center gap-1.5">
-                          {currentLoanStatus !== "Approved" && currentLoanStatus !== "Disbursed" && (
+                          {currentLoanStatus !== "Approved" && currentLoanStatus !== "Disbursed" && currentLoanStatus !== "Repaid" && (
                             <button
                               type="button"
                               onClick={() => handleStatusChange(loan, "Approved")}
@@ -264,7 +269,7 @@ export default function ActiveLoansTable({
                               Disburse
                             </button>
                           )}
-                          {currentLoanStatus !== "Rejected" && currentLoanStatus !== "Disbursed" && (
+                          {currentLoanStatus !== "Rejected" && currentLoanStatus !== "Disbursed" && currentLoanStatus !== "Repaid" && (
                             <button
                               type="button"
                               onClick={() => handleStatusChange(loan, "Rejected")}
@@ -275,7 +280,7 @@ export default function ActiveLoansTable({
                               Reject
                             </button>
                           )}
-                          {currentLoanStatus !== "Pending" && (
+                          {currentLoanStatus !== "Pending" && currentLoanStatus !== "Disbursed" && currentLoanStatus !== "Repaid" && (
                             <button
                               type="button"
                               onClick={() => handleStatusChange(loan, "Pending")}

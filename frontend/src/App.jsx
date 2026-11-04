@@ -66,11 +66,17 @@ export default function App() {
   }
 
   // Live loan status pushed by the server when a manager changes it.
-  useLoanNotifications(currentUser?.type === "customer", (event) => {
+  useLoanNotifications(Boolean(currentUser), (event) => {
     setLoans((prev) =>
       prev.map((loan) => (loan.l_no === event.l_no ? { ...loan, ...event.loan } : loan))
     );
+    if (Number.isFinite(event.branchAssets)) {
+      setBranches((prev) => prev.map((branch) => branch.b_name === event.b_name
+        ? { ...branch, assets: event.branchAssets }
+        : branch));
+    }
 
+    if (currentUser.type !== "customer") return;
     const amount = `$${Number(event.amt || 0).toLocaleString()}`;
     if (event.status === "Approved") {
       pushToast(`Congratulations! Loan ${event.l_no} for ${amount} has been Approved!`, "success");
@@ -174,6 +180,13 @@ export default function App() {
       console.error('Failed to update loan status', err);
       throw err;
     }
+  }
+
+  async function repayCustomerLoan(id) {
+    const result = await apiRequest(`/customer/loans/${encodeURIComponent(id)}/repay`, { method: "POST" });
+    setLoans((prev) => prev.map((loan) => loan.l_no === result.loan.l_no ? result.loan : loan));
+    setBranches((prev) => prev.map((branch) => branch.b_name === result.branch.b_name ? result.branch : branch));
+    return result;
   }
 
   async function predictLoanProbability(id) {
@@ -293,7 +306,8 @@ export default function App() {
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />
         <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
           <CustomerDashboard
-          loans={loans}
+            loans={loans}
+            onRepay={repayCustomerLoan}
             onApply={() => setCustomerView("apply")}
             balance={customerAccounts.reduce((total, account) => total + Number(account.balance || 0), 0)}
             branchName={customerAccounts.length === 1 ? customerAccounts[0].b_name : customerAccounts.length > 1 ? "Multiple branches" : "-"}

@@ -265,7 +265,10 @@ export default function BranchCards({
                 City: <span className="text-slate-700 dark:text-slate-200 font-medium">{b.b_city}</span>
               </p>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Available Lending Budget: <span className="text-emerald-600 dark:text-emerald-400 font-medium">{formatCurrency(b.lendingBudget)}</span>
+                Available Lending Budget: <span className="text-emerald-600 dark:text-emerald-400 font-medium">{formatCurrency(b.lendingBudget)}</span>
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                Branch Assets: <span className="text-indigo-600 dark:text-indigo-400 font-medium">{formatCurrency(b.assets || 0)}</span>
               </p>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1">
                 Manager:{" "}

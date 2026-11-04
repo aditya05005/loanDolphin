@@ -26,10 +26,12 @@ const loanSchema = new mongoose.Schema({
     scoredAt: { type: Date }
   },
   loan_date:      { type: Date, default: Date.now },
+  disbursedAt:    { type: Date },
+  repaidAt:       { type: Date },
   payments:       [{ amount: { type: Number }, date: { type: Date, default: Date.now } }],
   status: {
     type: String,
-    enum: ['Pending', 'Approved', 'Rejected', 'Disbursed'],
+    enum: ['Pending', 'Approved', 'Rejected', 'Disbursed', 'Repaid'],
     default: 'Pending'
   }
 });
